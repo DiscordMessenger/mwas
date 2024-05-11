@@ -29,6 +29,7 @@ namespace ri
 	typedef BOOL(WINAPI* PFNPATHFILEEXISTS)(LPCTSTR pszPath);
 	typedef BOOL(WINAPI* PFNGETMENUINFO)(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	typedef BOOL(WINAPI* PFNSETMENUINFO)(HMENU hMenu, LPMENUINFO lpMenuInfo);
+	typedef BOOL(WINAPI* PFNGETGESTUREINFO)(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
 	typedef COLORREF(WINAPI* PFNSETDCBRUSHCOLOR)(HDC hdc, COLORREF color);
 	typedef COLORREF(WINAPI* PFNSETDCPENCOLOR)(HDC hdc, COLORREF color);
 		
@@ -44,6 +45,7 @@ namespace ri
 	PFNPATHFILEEXISTS pPathFileExists;
 	PFNGETMENUINFO pGetMenuInfo;
 	PFNSETMENUINFO pSetMenuInfo;
+	PFNGETGESTUREINFO pGetGestureInfo;
 	PFNSETDCBRUSHCOLOR pSetDCBrushColor;
 	PFNSETDCPENCOLOR pSetDCPenColor;
 }
@@ -72,6 +74,7 @@ void ri::InitReimplementation()
 	{
 		pGetMenuInfo = (PFNGETMENUINFO)GetProcAddress(hLibUser32, "GetMenuInfo");
 		pSetMenuInfo = (PFNSETMENUINFO)GetProcAddress(hLibUser32, "SetMenuInfo");
+		pGetGestureInfo = (PFNGETGESTUREINFO)GetProcAddress(hLibUser32, "GetGestureInfo");
 	}
 
 	if (hLibGdi32)
@@ -262,7 +265,8 @@ BOOL ri::GetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo)
 {
 	if (pGetMenuInfo)
 		return pGetMenuInfo(hMenu, lpMenuInfo);
-
+	
+	// UNIMPLEMENTED
 	return FALSE;
 }
 
@@ -270,7 +274,17 @@ BOOL ri::SetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo)
 {
 	if (pSetMenuInfo)
 		return pSetMenuInfo(hMenu, lpMenuInfo);
+	
+	// UNIMPLEMENTED
+	return FALSE;
+}
 
+BOOL ri::GetGestureInfo(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo)
+{
+	if (pGetGestureInfo)
+		return pGetGestureInfo(hGestureInfo, pGestureInfo);
+	
+	// UNIMPLEMENTED
 	return FALSE;
 }
 

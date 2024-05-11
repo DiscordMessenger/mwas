@@ -59,6 +59,40 @@ GDI32:
 # endif
 #endif
 
+// To permit the same executable from running on all versions of Windows
+// without sacrificing functionality, add gesture definitions here:
+#if (WINVER < 0x0601)
+
+#define WM_GESTURE       (281)
+#define WM_GESTURENOTIFY (282)
+
+#define GID_BEGIN        1
+#define GID_END          2
+#define GID_ZOOM         3
+#define GID_PAN          4
+#define GID_ROTATE       5
+#define GID_TWOFINGERTAP 6
+#define GID_PRESSANDTAP  7
+#define GID_ROLLOVER     GID_PRESSANDTAP
+
+typedef struct __GESTUREINFO
+{
+	UINT cbSize;
+	DWORD dwFlags;
+	DWORD dwID;
+	HWND hwndTarget;
+	POINTS ptsLocation;
+	DWORD dwInstanceID;
+	DWORD dwSequenceID;
+	ULONGLONG ullArguments;
+	UINT cbExtraArgs;
+}
+GESTUREINFO, *PGESTUREINFO;
+
+DECLARE_HANDLE(HGESTUREINFO);
+
+#endif
+
 namespace ri
 {
 	// Initialize the reimplementations.  If available, use the Windows provided
@@ -88,6 +122,7 @@ namespace ri
 	// User32
 	BOOL GetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	BOOL SetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);
+	BOOL GetGestureInfo(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
 
 	// Gdi32
 	COLORREF SetDCBrushColor(HDC hdc, COLORREF color);

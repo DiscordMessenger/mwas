@@ -47,6 +47,8 @@ This is a list of functions shimmed, along with their implementation.
 
 - `SetMenuInfo` - Not implemented, returns `FALSE`.
 
+- `GetGestureInfo` - Not implemented, returns `FALSE`.
+
 - `SetDCBrushColor` - Not implemented, returns `0`.
 
 - `SetDCPenColor` - Not implemented, returns `0`.
