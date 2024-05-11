@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Windows.h>
+#include <windows.h>
 
 // This part of the DiscordMessenger project is designed to reimplement APIs missing
 // in earlier versions of Windows, such as Windows NT 4.  It's basically like a polyfill.
