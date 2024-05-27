@@ -57,6 +57,8 @@ This is a list of functions shimmed, along with their implementation if Windows 
 
 - `GetMonitorInfo` - Simulates fetching information about the primary monitor using `GetSystemMetrics`.
 
+- `AnimateWindow` - Hides or shows the window based on the flags parameter. Animation related flags are ignored.
+
 ## License
 
 This project is licensed under the MIT license.  See the license file for details.

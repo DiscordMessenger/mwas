@@ -34,6 +34,7 @@ namespace ri
 	typedef COLORREF(WINAPI* PFNSETDCPENCOLOR)(HDC hdc, COLORREF color);
 	typedef HMONITOR(WINAPI* PFNMONITORFROMPOINT)(POINT pt, DWORD flags);
 	typedef BOOL(WINAPI* PFNGETMONITORINFO)(HMONITOR hmon, LPMONITORINFO lpmi);
+	typedef BOOL(WINAPI* PFNANIMATEWINDOW)(HWND hwnd, DWORD time, DWORD flags);
 		
 	PFNGETFILESIZEEX pGetFileSizeEx;
 	PFNSETFILEPOINTEREX pSetFilePointerEx;
@@ -52,6 +53,7 @@ namespace ri
 	PFNSETDCPENCOLOR pSetDCPenColor;
 	PFNMONITORFROMPOINT pMonitorFromPoint;
 	PFNGETMONITORINFO pGetMonitorInfo;
+	PFNANIMATEWINDOW pAnimateWindow;
 }
 // namespace ri
 
@@ -81,6 +83,7 @@ void ri::InitReimplementation()
 		pGetGestureInfo = (PFNGETGESTUREINFO)GetProcAddress(hLibUser32, "GetGestureInfo");
 		pGetMonitorInfo = (PFNGETMONITORINFO)GetProcAddress(hLibUser32, "GetMonitorInfo" UNIVER);
 		pMonitorFromPoint = (PFNMONITORFROMPOINT)GetProcAddress(hLibUser32, "MonitorFromPoint");
+		pAnimateWindow = (PFNANIMATEWINDOW)GetProcAddress(hLibUser32, "AnimateWindow");
 	}
 
 	if (hLibGdi32)
@@ -364,5 +367,20 @@ BOOL ri::GetMonitorInfo(HMONITOR hmon, LPMONITORINFO lpmi)
 		_tcscpy(lpmiex->szDevice, TEXT("MWAS Reimpl Monitor"));
 	}
 
+	return TRUE;
+}
+
+BOOL ri::AnimateWindow(HWND hWnd, DWORD time, DWORD flags)
+{
+	if (pAnimateWindow)
+		return pAnimateWindow(hWnd, time, flags);
+	
+	int showType = SW_SHOWNOACTIVATE;
+	if (flags & AW_ACTIVATE)
+		showType = SW_SHOW;
+	if (flags & AW_HIDE)
+		showType = SW_HIDE;
+	
+	ShowWindow(hWnd, showType);
 	return TRUE;
 }

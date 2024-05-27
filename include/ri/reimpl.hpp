@@ -128,6 +128,7 @@ namespace ri
 	BOOL PathFileExists(LPCTSTR pszPath);
 
 	// User32
+	BOOL AnimateWindow(HWND hWnd, DWORD time, DWORD flags);
 	BOOL GetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	BOOL SetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	BOOL GetGestureInfo(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
