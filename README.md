@@ -18,7 +18,7 @@ simply add `ri::` to all uses of modern Windows APIs that are implemented by thi
 
 ## Functions shimmed by this compatibility layer
 
-This is a list of functions shimmed, along with their implementation.
+This is a list of functions shimmed, along with their implementation if Windows doesn't provide one.
 
 - `GetFileSizeEx` - Implemented using `GetFileSize`.
 
@@ -52,6 +52,10 @@ This is a list of functions shimmed, along with their implementation.
 - `SetDCBrushColor` - Not implemented, returns `0`.
 
 - `SetDCPenColor` - Not implemented, returns `0`.
+
+- `MonitorFromPoint` - Returns a fake magic value to be passed into `GetMonitorInfo`.
+
+- `GetMonitorInfo` - Simulates fetching information about the primary monitor using `GetSystemMetrics`.
 
 ## License
 

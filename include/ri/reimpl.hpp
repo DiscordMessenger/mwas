@@ -59,6 +59,14 @@ GDI32:
 # endif
 #endif
 
+#ifndef GetMonitorInfo
+# ifdef UNICODE
+#  define GetMonitorInfo GetMonitorInfoW
+# else
+#  define GetMonitorInfo GetMonitorInfoA
+# endif
+#endif
+
 // To permit the same executable from running on all versions of Windows
 // without sacrificing functionality, add gesture definitions here:
 #if (WINVER < 0x0601)
@@ -123,6 +131,8 @@ namespace ri
 	BOOL GetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	BOOL SetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	BOOL GetGestureInfo(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
+	BOOL GetMonitorInfo(HMONITOR hmon, LPMONITORINFO lpmi);
+	HMONITOR MonitorFromPoint(POINT pt, DWORD flags);
 
 	// Gdi32
 	COLORREF SetDCBrushColor(HDC hdc, COLORREF color);

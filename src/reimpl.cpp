@@ -32,6 +32,8 @@ namespace ri
 	typedef BOOL(WINAPI* PFNGETGESTUREINFO)(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
 	typedef COLORREF(WINAPI* PFNSETDCBRUSHCOLOR)(HDC hdc, COLORREF color);
 	typedef COLORREF(WINAPI* PFNSETDCPENCOLOR)(HDC hdc, COLORREF color);
+	typedef HMONITOR(WINAPI* PFNMONITORFROMPOINT)(POINT pt, DWORD flags);
+	typedef BOOL(WINAPI* PFNGETMONITORINFO)(HMONITOR hmon, LPMONITORINFO lpmi);
 		
 	PFNGETFILESIZEEX pGetFileSizeEx;
 	PFNSETFILEPOINTEREX pSetFilePointerEx;
@@ -48,6 +50,8 @@ namespace ri
 	PFNGETGESTUREINFO pGetGestureInfo;
 	PFNSETDCBRUSHCOLOR pSetDCBrushColor;
 	PFNSETDCPENCOLOR pSetDCPenColor;
+	PFNMONITORFROMPOINT pMonitorFromPoint;
+	PFNGETMONITORINFO pGetMonitorInfo;
 }
 // namespace ri
 
@@ -75,6 +79,8 @@ void ri::InitReimplementation()
 		pGetMenuInfo = (PFNGETMENUINFO)GetProcAddress(hLibUser32, "GetMenuInfo");
 		pSetMenuInfo = (PFNSETMENUINFO)GetProcAddress(hLibUser32, "SetMenuInfo");
 		pGetGestureInfo = (PFNGETGESTUREINFO)GetProcAddress(hLibUser32, "GetGestureInfo");
+		pGetMonitorInfo = (PFNGETMONITORINFO)GetProcAddress(hLibUser32, "GetMonitorInfo");
+		pMonitorFromPoint = (PFNMONITORFROMPOINT)GetProcAddress(hLibUser32, "MonitorFromPoint");
 	}
 
 	if (hLibGdi32)
@@ -304,4 +310,59 @@ COLORREF ri::SetDCPenColor(HDC hdc, COLORREF color)
 
 	// TODO
 	return 0;
+}
+
+#define FAKE_PRIMARY_MONITOR ((HMONITOR) 0x1235679A)
+
+HMONITOR ri::MonitorFromPoint(POINT pt, DWORD flags)
+{
+	if (pMonitorFromPoint)
+		return pMonitorFromPoint(pt, flags);
+
+	int width = GetSystemMetrics(SM_CXSCREEN);
+	int height = GetSystemMetrics(SM_CYSCREEN);
+
+	if ((flags & MONITOR_DEFAULTTONULL) && (pt.x < 0 || pt.y < 0 || pt.x >= width || pt.y >= height))
+		return NULL;
+
+	return FAKE_PRIMARY_MONITOR;
+}
+
+BOOL ri::GetMonitorInfo(HMONITOR hmon, LPMONITORINFO lpmi)
+{
+	if (pGetMonitorInfo)
+		return pGetMonitorInfo(hmon, lpmi);
+
+	if (hmon != FAKE_PRIMARY_MONITOR)
+		return FALSE;
+
+	DWORD size = lpmi->cbSize;
+	ZeroMemory(lpmi, size);
+	lpmi->cbSize = size;
+
+	int width = GetSystemMetrics(SM_CXSCREEN);
+	int height = GetSystemMetrics(SM_CYSCREEN);
+
+	lpmi->dwFlags = MONITORINFOF_PRIMARY;
+
+	// Get monitor rectangle
+	lpmi->rcMonitor.left = lpmi->rcMonitor.top = 0;
+	lpmi->rcMonitor.right = width;
+	lpmi->rcMonitor.bottom = height;
+	
+	// Get work area
+	// Note, preserve last error
+	DWORD lastErr = GetLastError();
+	if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &lpmi->rcWork, 0)) {
+		// Failed to call the function, just return rcMonitor
+		lpmi->rcWork = lpmi->rcMonitor;
+	}
+	SetLastError(lastErr);
+
+	if (lpmi->cbSize == sizeof(MONITORINFOEX)) {
+		LPMONITORINFOEX lpmiex = (LPMONITORINFOEX) lpmi;
+		_tcscpy(lpmiex->szDevice, TEXT("MWAS Reimpl Monitor"));
+	}
+
+	return TRUE;
 }
