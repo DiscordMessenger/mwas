@@ -28,6 +28,8 @@ This is a list of functions shimmed, along with their implementation if Windows 
 - `VerSetConditionMask` - Copied from
   [ReactOS' implementation](https://github.com/mirror/reactos/blob/master/reactos/lib/rtl/version.c#L213)
 
+- `VerifyVersionInfo` - Implemented using `GetVersionEx`.
+
 - `RegisterWaitForSingleObject` - Returns `INVALID_HANDLE_VALUE` through `phNewWaitObject` and
   `FALSE` to the caller. Not implemented.
 

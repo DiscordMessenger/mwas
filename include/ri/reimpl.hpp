@@ -19,6 +19,7 @@ KERNEL32:
 	[X] VerSetConditionMask           -- Used by asio::detail::win_iocp_io_context
 	[X] RegisterWaitForSingleObject   -- Used by asio::detail::win_object_handle_service
 	[X] UnregisterWaitEx              -- Used by asio::detail::win_object_handle_service
+	[ ] VerifyVersionInfo             -- Used by asio::detail::win_iocp_io_context
 
 MSIMG32: // All missing
 	[X] AlphaBlend      -- FillGradientColors
@@ -32,12 +33,16 @@ SHLWAPI: // All missing
 	[X] PathFileExistsW  -- Used by WinUtils / FileExists
 
 USER32:
-	[x] GetMenuInfo -- Used by MessageList
-	[x] SetMenuInfo -- Used by MessageList
+	[X] GetMenuInfo -- Used by MessageList
+	[X] SetMenuInfo -- Used by MessageList
+	[X] GetGestureInfo -- Used by the touch control support
+	[X] GetMonitorInfo -- Used by profile popout
+	[X] MonitorFromPoint -- Used by profile popout
+	[X] AnimateWindow -- Used by profile popout
 
 GDI32:
-	SetDCBrushColor -- RichEmbedItem, MessageList, RoleList
-	SetDCPenColor   -- GuildHeader, GuildLister, MessageList, RoleList
+	[X] SetDCBrushColor -- RichEmbedItem, MessageList, RoleList
+	[X] SetDCPenColor   -- GuildHeader, GuildLister, MessageList, RoleList
 
 */
 
@@ -64,6 +69,14 @@ GDI32:
 #  define GetMonitorInfo GetMonitorInfoW
 # else
 #  define GetMonitorInfo GetMonitorInfoA
+# endif
+#endif
+
+#ifndef VerifyVersionInfo
+# ifdef UNICODE
+#  define VerifyVersionInfo VerifyVersionInfoW
+# else
+#  define VerifyVersionInfo VerifyVersionInfoA
 # endif
 #endif
 
@@ -113,6 +126,7 @@ namespace ri
 	BOOL SetFilePointerEx(HANDLE hFile, LARGE_INTEGER liDistanceToMove, PLARGE_INTEGER lpNewFilePointer, DWORD dwMoveMethod);
 	BOOL RegisterWaitForSingleObject(PHANDLE phNewWaitObject, HANDLE hObject, WAITORTIMERCALLBACK Callback, PVOID Context, ULONG dwMilliseconds, ULONG dwFlags);
 	BOOL UnregisterWaitEx(HANDLE WaitHandle, HANDLE CompletionEvent);
+	BOOL VerifyVersionInfo(LPOSVERSIONINFOEX pVersionInfo, DWORD typeMask, DWORDLONG conditionMask);
 
 	// Msimg32
 	bool HaveMsImg();

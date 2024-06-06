@@ -22,6 +22,7 @@ namespace ri
 	typedef BOOL(WINAPI* PFNSETFILEPOINTEREX)(HANDLE hFile, LARGE_INTEGER liDistanceToMove, PLARGE_INTEGER lpNewFilePointer, DWORD dwMoveMethod);
 	typedef BOOL(WINAPI* PFNUNREGISTERWAITEX)(HANDLE WaitHandle, HANDLE CompletionEvent);
 	typedef BOOL(WINAPI* PFNREGISTERWAITFORSINGLEOBJECT)(PHANDLE phNewWaitObject, HANDLE hObject, WAITORTIMERCALLBACK Callback, PVOID Context, ULONG dwMilliseconds, ULONG dwFlags);
+	typedef BOOL(WINAPI* PFNVERIFYVERSIONINFO)(LPOSVERSIONINFOEX pVersionInfo, DWORD typeMask, DWORDLONG conditionMask);
 	typedef BOOL(WINAPI* PFNGRADIENTFILL)(HDC hdc, PTRIVERTEX trivertex, ULONG nvertex, PVOID pmesh, ULONG nmesh, ULONG ulmode);
 	typedef BOOL(WINAPI* PFNALPHABLEND)(HDC hdc, int xod, int yod, int wd, int hd, HDC hdcs, int xos, int yos, int ws, int hs, BLENDFUNCTION bf);
 	typedef BOOL(WINAPI* PFNTRANSPARENTBLT)(HDC hdc, int xod, int yod, int wd, int hd, HDC hdcs, int xos, int yos, int ws, int hs, UINT crt);
@@ -41,6 +42,7 @@ namespace ri
 	PFNVERSETCONDITIONMASK pVerSetConditionMask;
 	PFNUNREGISTERWAITEX pUnregisterWaitEx;
 	PFNREGISTERWAITFORSINGLEOBJECT pRegisterWaitForSingleObject;
+	PFNVERIFYVERSIONINFO pVerifyVersionInfo;
 	PFNGRADIENTFILL pGradientFill;
 	PFNALPHABLEND pAlphaBlend;
 	PFNTRANSPARENTBLT pTransparentBlt;
@@ -74,6 +76,7 @@ void ri::InitReimplementation()
 		pVerSetConditionMask = (PFNVERSETCONDITIONMASK)GetProcAddress(hLibKernel32, "VerSetConditionMask");
 		pRegisterWaitForSingleObject = (PFNREGISTERWAITFORSINGLEOBJECT)GetProcAddress(hLibKernel32, "RegisterWaitForSingleObject");
 		pUnregisterWaitEx = (PFNUNREGISTERWAITEX)GetProcAddress(hLibKernel32, "UnregisterWaitEx");
+		pVerifyVersionInfo = (PFNVERIFYVERSIONINFO)GetProcAddress(hLibKernel32, "VerifyVersionInfo" UNIVER);
 	}
 
 	if (hLibUser32)
@@ -188,6 +191,62 @@ ULONGLONG ri::VerSetConditionMask(ULONGLONG ConditionMask, DWORD TypeMask, BYTE 
 		ConditionMask |= ullCondMask << (0 * VER_NUM_BITS_PER_CONDITION_MASK);
  
 	return ConditionMask;
+}
+
+static bool CompareVersionField(DWORD data1, DWORD data2, int type)
+{
+	switch (type)
+	{
+		case VER_EQUAL: return data1 == data2;
+		case VER_GREATER: return data1 > data2;
+		case VER_GREATER_EQUAL: return data1 >= data2;
+		case VER_LESS: return data1 < data2;
+		case VER_LESS_EQUAL: return data1 <= data2;
+		case VER_AND: return (data1 & data2) == data1;
+		case VER_OR: return (data1 & data2) != 0;
+		default:
+			assert(!"Unknown comparison type");
+			return true;
+	}
+}
+
+BOOL ri::VerifyVersionInfo(LPOSVERSIONINFOEX pVersionInfo, DWORD typeMask, DWORDLONG conditionMask)
+{
+	if (pVerifyVersionInfo)
+		return pVerifyVersionInfo(pVersionInfo, typeMask, conditionMask);
+
+	OSVERSIONINFO ver{};
+	ver.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+
+	if (!GetVersionEx(&ver))
+		return FALSE;
+
+	if (typeMask & VER_MINORVERSION)
+		if (!CompareVersionField(ver.dwMinorVersion, pVersionInfo->dwMinorVersion, (conditionMask >> (0 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+	if (typeMask & VER_MAJORVERSION)
+		if (!CompareVersionField(ver.dwMajorVersion, pVersionInfo->dwMajorVersion, (conditionMask >> (1 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+	if (typeMask & VER_BUILDNUMBER)
+		if (!CompareVersionField(ver.dwBuildNumber, pVersionInfo->dwBuildNumber, (conditionMask >> (2 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+	if (typeMask & VER_PLATFORMID)
+		if (!CompareVersionField(ver.dwPlatformId, pVersionInfo->dwPlatformId, (conditionMask >> (3 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+	if (typeMask & VER_SERVICEPACKMINOR)
+		if (!CompareVersionField(0, pVersionInfo->wServicePackMinor, (conditionMask >> (4 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+	if (typeMask & VER_SERVICEPACKMAJOR)
+		if (!CompareVersionField(0, pVersionInfo->wServicePackMajor, (conditionMask >> (5 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+	if (typeMask & VER_SUITENAME)
+		if (!CompareVersionField(0, pVersionInfo->wSuiteMask, (conditionMask >> (6 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+	if (typeMask & VER_PRODUCT_TYPE)
+		if (!CompareVersionField(0, pVersionInfo->wProductType, (conditionMask >> (7 * VER_NUM_BITS_PER_CONDITION_MASK)) & VER_CONDITION_MASK))
+			return FALSE;
+
+	return TRUE;
 }
 
 BOOL ri::RegisterWaitForSingleObject(PHANDLE phNewWaitObject, HANDLE hObject, WAITORTIMERCALLBACK Callback, PVOID Context, ULONG dwMilliseconds, ULONG dwFlags)
