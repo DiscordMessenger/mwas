@@ -127,6 +127,9 @@ namespace ri
 	BOOL RegisterWaitForSingleObject(PHANDLE phNewWaitObject, HANDLE hObject, WAITORTIMERCALLBACK Callback, PVOID Context, ULONG dwMilliseconds, ULONG dwFlags);
 	BOOL UnregisterWaitEx(HANDLE WaitHandle, HANDLE CompletionEvent);
 	BOOL VerifyVersionInfo(LPOSVERSIONINFOEX pVersionInfo, DWORD typeMask, DWORDLONG conditionMask);
+	BOOL InitializeCriticalSectionAndSpinCount(LPCRITICAL_SECTION lpCriticalSection, DWORD dwSpinCount);
+	BOOL TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection);
+	LONG InterlockedExchangeAdd(LONG* Addend, LONG Value);
 
 	// Msimg32
 	bool HaveMsImg();
