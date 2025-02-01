@@ -2,6 +2,10 @@
 #include <tchar.h>
 #include "ri/reimpl.hpp"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 #ifdef UNICODE
 #define UNIVER "W"
 #else
@@ -36,6 +40,8 @@ namespace ri
 	typedef HMONITOR(WINAPI* PFNMONITORFROMPOINT)(POINT pt, DWORD flags);
 	typedef BOOL(WINAPI* PFNGETMONITORINFO)(HMONITOR hmon, LPMONITORINFO lpmi);
 	typedef BOOL(WINAPI* PFNANIMATEWINDOW)(HWND hwnd, DWORD time, DWORD flags);
+	typedef BOOL(WINAPI* PFNINITIALIZECRITICALSECTIONANDSPINCOUNT)(LPCRITICAL_SECTION lpCriticalSection, DWORD dwSpinCount);
+	typedef BOOL(WINAPI* PFNTRYENTERCRITICALSECTION)(LPCRITICAL_SECTION lpCriticalSection);
 		
 	PFNGETFILESIZEEX pGetFileSizeEx;
 	PFNSETFILEPOINTEREX pSetFilePointerEx;
@@ -56,6 +62,8 @@ namespace ri
 	PFNMONITORFROMPOINT pMonitorFromPoint;
 	PFNGETMONITORINFO pGetMonitorInfo;
 	PFNANIMATEWINDOW pAnimateWindow;
+	PFNINITIALIZECRITICALSECTIONANDSPINCOUNT pInitializeCriticalSectionAndSpinCount;
+	PFNTRYENTERCRITICALSECTION pTryEnterCriticalSection;
 }
 // namespace ri
 
@@ -77,6 +85,8 @@ void ri::InitReimplementation()
 		pRegisterWaitForSingleObject = (PFNREGISTERWAITFORSINGLEOBJECT)GetProcAddress(hLibKernel32, "RegisterWaitForSingleObject");
 		pUnregisterWaitEx = (PFNUNREGISTERWAITEX)GetProcAddress(hLibKernel32, "UnregisterWaitEx");
 		pVerifyVersionInfo = (PFNVERIFYVERSIONINFO)GetProcAddress(hLibKernel32, "VerifyVersionInfo" UNIVER);
+		pInitializeCriticalSectionAndSpinCount = (PFNINITIALIZECRITICALSECTIONANDSPINCOUNT)GetProcAddress(hLibKernel32, "InitializeCriticalSectionAndSpinCount");
+		pTryEnterCriticalSection = (PFNTRYENTERCRITICALSECTION)GetProcAddress(hLibKernel32, "TryEnterCriticalSection");
 	}
 
 	if (hLibUser32)
@@ -442,4 +452,36 @@ BOOL ri::AnimateWindow(HWND hWnd, DWORD time, DWORD flags)
 	
 	ShowWindow(hWnd, showType);
 	return TRUE;
+}
+
+BOOL ri::InitializeCriticalSectionAndSpinCount(LPCRITICAL_SECTION lpCriticalSection, DWORD dwSpinCount)
+{
+	if (!pInitializeCriticalSectionAndSpinCount)
+	{
+		::InitializeCriticalSection(lpCriticalSection);
+		return TRUE;
+	}
+
+	return pInitializeCriticalSectionAndSpinCount(lpCriticalSection, dwSpinCount);
+}
+
+LONG ri::InterlockedExchangeAdd(LONG* Addend, LONG Value)
+{
+	// Please I beg you. Do not reference Kernel32.dll!InterlockedExchangeAdd here.
+	// Nope, neither variant seems to do that, instead generating a `lock xadd` like they should.
+#ifdef _MSC_VER
+	return _InterlockedExchangeAdd(Addend, Value);
+#else
+	return __atomic_fetch_add(Addend, Value, __ATOMIC_SEQ_CST);
+#endif
+}
+
+BOOL ri::TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection)
+{
+	if (pTryEnterCriticalSection)
+		return pTryEnterCriticalSection(lpCriticalSection);
+
+	// NOTE: Currently, neither iprog::recursive_mutex::try_lock nor iprog::mutex::try_lock
+	// seem to be used. So, on Windows 95, we're safe, for now ...
+	return FALSE;
 }
