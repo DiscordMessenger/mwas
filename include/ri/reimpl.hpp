@@ -155,5 +155,10 @@ namespace ri
 	// Gdi32
 	COLORREF SetDCBrushColor(HDC hdc, COLORREF color);
 	COLORREF SetDCPenColor(HDC hdc, COLORREF color);
+	
+	// Not actually part of win32, but we have to do this instead
+	// of relying on GetStockBrush:
+	HBRUSH GetDCBrush();
+	HPEN GetDCPen();
 }
 // namespace ri

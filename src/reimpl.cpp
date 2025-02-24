@@ -286,10 +286,33 @@ bool ri::HaveMsImg()
 	return hLibMsimg32 != NULL;
 }
 
+static constexpr LONG missingint = 2147483647;
+static inline LONG minimum(LONG a, LONG b) { return a < b ? a : b; }
+static inline LONG maximum(LONG a, LONG b) { return a > b ? a : b; }
+
 BOOL ri::GradientFill(HDC hdc, PTRIVERTEX trivertex, ULONG nvertex, PVOID pmesh, ULONG nmesh, ULONG ulmode)
 {
 	if (pGradientFill)
 		return pGradientFill(hdc, trivertex, nvertex, pmesh, nmesh, ulmode);
+
+	if (nvertex < 1)
+		return FALSE;
+
+	// XXX: Only supports rectangles for now.
+	RECT r { missingint, missingint, -missingint, -missingint };
+
+	for (ULONG i = 0; i < nvertex; i++)
+	{
+		r.left   = minimum(r.left,   trivertex[i].x);
+		r.top    = minimum(r.top,    trivertex[i].y);
+		r.right  = maximum(r.right,  trivertex[i].x);
+		r.bottom = maximum(r.bottom, trivertex[i].y);
+	}
+
+	COLORREF cr = RGB(trivertex->Red >> 8, trivertex->Green >> 8, trivertex->Blue >> 8);
+	HBRUSH hbr = CreateSolidBrush(cr);
+	FillRect(hdc, &r, hbr);
+	DeleteObject(hbr);
 
 	// XXX: Not going to implement it
 	return FALSE;
@@ -364,24 +387,6 @@ BOOL ri::GetGestureInfo(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo)
 	
 	// UNIMPLEMENTED
 	return FALSE;
-}
-
-COLORREF ri::SetDCBrushColor(HDC hdc, COLORREF color)
-{
-	if (pSetDCBrushColor)
-		return pSetDCBrushColor(hdc, color);
-
-	// TODO
-	return 0;
-}
-
-COLORREF ri::SetDCPenColor(HDC hdc, COLORREF color)
-{
-	if (pSetDCPenColor)
-		return pSetDCPenColor(hdc, color);
-
-	// TODO
-	return 0;
 }
 
 #define FAKE_PRIMARY_MONITOR ((HMONITOR) 0x1235679A)
@@ -484,4 +489,128 @@ BOOL ri::TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection)
 	// NOTE: Currently, neither iprog::recursive_mutex::try_lock nor iprog::mutex::try_lock
 	// seem to be used. So, on Windows 95, we're safe, for now ...
 	return FALSE;
+}
+
+namespace ri {
+namespace internal {
+
+	static HBRUSH _dcBrush = NULL;
+	static HPEN _dcPen = NULL;
+	static COLORREF _dcBrushColor, _dcPenColor;
+
+	bool MayKeepBrush(COLORREF newBrushColor)
+	{
+		return _dcBrushColor == newBrushColor && _dcBrush;
+	}
+	bool MayKeepPen(COLORREF newPenColor)
+	{
+		return _dcPenColor == newPenColor && _dcPen;
+	}
+
+	void DeleteDCBrush()
+	{
+		if (_dcBrush)
+			DeleteObject(_dcBrush);
+	}
+
+	void CreateDCBrush()
+	{
+		DeleteDCBrush();
+		_dcBrush = CreateSolidBrush(_dcBrushColor);
+	}
+
+	void DeleteDCPen()
+	{
+		if (_dcPen)
+			DeleteObject(_dcPen);
+	}
+
+	void CreateDCPen()
+	{
+		DeleteDCPen();
+		_dcPen = CreatePen(PS_SOLID, 1, _dcPenColor);
+	}
+
+	void CreateDCBrushIfNeeded()
+	{
+		if (!_dcBrush)
+			CreateDCBrush();
+	}
+
+	void CreateDCPenIfNeeded()
+	{
+		if (!_dcPen)
+			CreateDCPen();
+	}
+}
+}
+
+// TODO: Perhaps we can just delete the DC brush once they call
+// SetDCBrushColor with the "old color"? Just return 0xFFFFFFFF
+// every time, and when you receive it as parameter, bam, no more
+// brush for you.
+//
+// !! Might break things, if text is drawn in between two
+// SetDCBrushColor calls for example... I'll keep it as it is for now.
+
+COLORREF ri::SetDCBrushColor(HDC hdc, COLORREF color)
+{
+	if (pSetDCBrushColor)
+		return pSetDCBrushColor(hdc, color);
+
+	using namespace ri::internal;
+
+	// NOTE: This is *NOT* a 100% compliant implementation
+	// given that you have to call `ri::GetDCBrush()` and it
+	// might return a different brush, and you also can't hang
+	// onto the DC brush handle because it might be deleted!
+	if (MayKeepBrush(color))
+		return color;
+
+	COLORREF oldColor = _dcBrushColor;
+
+	_dcBrushColor = color;
+	CreateDCBrush();
+
+	return oldColor;
+}
+
+COLORREF ri::SetDCPenColor(HDC hdc, COLORREF color)
+{
+	if (pSetDCPenColor)
+		return pSetDCPenColor(hdc, color);
+
+	using namespace ri::internal;
+
+	// NOTE: This is *NOT* a 100% compliant implementation
+	// given that you have to call `ri::GetDCPen()` and it
+	// might return a different pen, and you also can't hang
+	// onto the DC brush handle because it might be deleted!
+	if (MayKeepPen(color))
+		return color;
+
+	COLORREF oldColor = _dcPenColor;
+
+	_dcPenColor = color;
+	CreateDCPen();
+
+	return oldColor;
+}
+
+HBRUSH ri::GetDCBrush()
+{
+	if (pSetDCBrushColor)
+		return (HBRUSH) GetStockObject(DC_BRUSH);
+
+	ri::internal::CreateDCBrushIfNeeded();
+	return ri::internal::_dcBrush;
+}
+
+HPEN ri::GetDCPen()
+{
+	if (pSetDCPenColor)
+		return (HPEN) GetStockObject(DC_PEN);
+
+	ri::internal::CreateDCPenIfNeeded();
+	return ri::internal::_dcPen;
 }
