@@ -1,6 +1,7 @@
 #include <cassert>
 #include <tchar.h>
 #include "ri/reimpl.hpp"
+#include "ri/recrypt.hpp"
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -20,28 +21,49 @@ namespace ri
 	HMODULE hLibShell32;
 	HMODULE hLibMsimg32;
 	HMODULE hLibShlwapi;
+	HMODULE hLibCrypt32;
 
+	// Kernel32
 	typedef ULONGLONG(WINAPI* PFNVERSETCONDITIONMASK)(ULONGLONG ConditionMask, DWORD TypeMask, BYTE Condition);
 	typedef BOOL(WINAPI* PFNGETFILESIZEEX)(HANDLE hFile, PLARGE_INTEGER lpFileSize);
 	typedef BOOL(WINAPI* PFNSETFILEPOINTEREX)(HANDLE hFile, LARGE_INTEGER liDistanceToMove, PLARGE_INTEGER lpNewFilePointer, DWORD dwMoveMethod);
 	typedef BOOL(WINAPI* PFNUNREGISTERWAITEX)(HANDLE WaitHandle, HANDLE CompletionEvent);
 	typedef BOOL(WINAPI* PFNREGISTERWAITFORSINGLEOBJECT)(PHANDLE phNewWaitObject, HANDLE hObject, WAITORTIMERCALLBACK Callback, PVOID Context, ULONG dwMilliseconds, ULONG dwFlags);
 	typedef BOOL(WINAPI* PFNVERIFYVERSIONINFO)(LPOSVERSIONINFOEX pVersionInfo, DWORD typeMask, DWORDLONG conditionMask);
+	typedef BOOL(WINAPI* PFNINITIALIZECRITICALSECTIONANDSPINCOUNT)(LPCRITICAL_SECTION lpCriticalSection, DWORD dwSpinCount);
+	typedef BOOL(WINAPI* PFNTRYENTERCRITICALSECTION)(LPCRITICAL_SECTION lpCriticalSection);
+	typedef DWORD(WINAPI* PFNQUEUEUSERAPC)(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData);
+
+	// MsImg32
 	typedef BOOL(WINAPI* PFNGRADIENTFILL)(HDC hdc, PTRIVERTEX trivertex, ULONG nvertex, PVOID pmesh, ULONG nmesh, ULONG ulmode);
 	typedef BOOL(WINAPI* PFNALPHABLEND)(HDC hdc, int xod, int yod, int wd, int hd, HDC hdcs, int xos, int yos, int ws, int hs, BLENDFUNCTION bf);
 	typedef BOOL(WINAPI* PFNTRANSPARENTBLT)(HDC hdc, int xod, int yod, int wd, int hd, HDC hdcs, int xos, int yos, int ws, int hs, UINT crt);
+
+	// Shell32
 	typedef HRESULT(WINAPI* PFNSHGETFOLDERPATH)(HWND hwnd, int csidl, HANDLE hndl, DWORD dwf, LPTSTR szp);
+
+	// Shlwapi
 	typedef BOOL(WINAPI* PFNPATHFILEEXISTS)(LPCTSTR pszPath);
+
+	// Gdi32
+	typedef COLORREF(WINAPI* PFNSETDCBRUSHCOLOR)(HDC hdc, COLORREF color);
+	typedef COLORREF(WINAPI* PFNSETDCPENCOLOR)(HDC hdc, COLORREF color);
+
+	// User32
 	typedef BOOL(WINAPI* PFNGETMENUINFO)(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	typedef BOOL(WINAPI* PFNSETMENUINFO)(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	typedef BOOL(WINAPI* PFNGETGESTUREINFO)(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
-	typedef COLORREF(WINAPI* PFNSETDCBRUSHCOLOR)(HDC hdc, COLORREF color);
-	typedef COLORREF(WINAPI* PFNSETDCPENCOLOR)(HDC hdc, COLORREF color);
 	typedef HMONITOR(WINAPI* PFNMONITORFROMPOINT)(POINT pt, DWORD flags);
 	typedef BOOL(WINAPI* PFNGETMONITORINFO)(HMONITOR hmon, LPMONITORINFO lpmi);
 	typedef BOOL(WINAPI* PFNANIMATEWINDOW)(HWND hwnd, DWORD time, DWORD flags);
-	typedef BOOL(WINAPI* PFNINITIALIZECRITICALSECTIONANDSPINCOUNT)(LPCRITICAL_SECTION lpCriticalSection, DWORD dwSpinCount);
-	typedef BOOL(WINAPI* PFNTRYENTERCRITICALSECTION)(LPCRITICAL_SECTION lpCriticalSection);
+	typedef BOOL(WINAPI* PFNTRACKMOUSEEVENT)(LPTRACKMOUSEEVENT lpTME);
+
+	// Crypt32
+	typedef HCERTSTORE    (WINAPI* PFNCERTOPENSYSTEMSTOREA)       (HCRYPTPROV_LEGACY, LPCSTR);
+	typedef BOOL          (WINAPI* PFNCERTCLOSESTORE)             (HCERTSTORE, DWORD);
+	typedef PCCERT_CONTEXT(WINAPI* PFNCERTFINDCERTIFICATEINSTORE) (HCERTSTORE, DWORD, DWORD, DWORD, const void*, PCCERT_CONTEXT);
+	typedef BOOL          (WINAPI* PFNCERTFREECERTIFICATECONTEXT) (PCCERT_CONTEXT);
+	typedef PCCERT_CONTEXT(WINAPI* PFNCERTENUMCERTIFICATESINSTORE)(HCERTSTORE, PCCERT_CONTEXT);
 		
 	PFNGETFILESIZEEX pGetFileSizeEx;
 	PFNSETFILEPOINTEREX pSetFilePointerEx;
@@ -62,8 +84,15 @@ namespace ri
 	PFNMONITORFROMPOINT pMonitorFromPoint;
 	PFNGETMONITORINFO pGetMonitorInfo;
 	PFNANIMATEWINDOW pAnimateWindow;
+	PFNTRACKMOUSEEVENT pTrackMouseEvent;
 	PFNINITIALIZECRITICALSECTIONANDSPINCOUNT pInitializeCriticalSectionAndSpinCount;
 	PFNTRYENTERCRITICALSECTION pTryEnterCriticalSection;
+	PFNQUEUEUSERAPC pQueueUserAPC;
+	PFNCERTOPENSYSTEMSTOREA pCertOpenSystemStoreA;
+	PFNCERTCLOSESTORE pCertCloseStore;
+	PFNCERTFINDCERTIFICATEINSTORE pCertFindCertificateInStore;
+	PFNCERTFREECERTIFICATECONTEXT pCertFreeCertificateContext;
+	PFNCERTENUMCERTIFICATESINSTORE pCertEnumCertificatesInStore;
 }
 // namespace ri
 
@@ -76,6 +105,7 @@ void ri::InitReimplementation()
 	hLibShell32  = LoadLibrary(TEXT("shell32.dll"));
 	hLibMsimg32  = LoadLibrary(TEXT("msimg32.dll"));
 	hLibShlwapi  = LoadLibrary(TEXT("shlwapi.dll"));
+	hLibCrypt32  = LoadLibrary(TEXT("crypt32.dll"));
 
 	if (hLibKernel32)
 	{
@@ -87,6 +117,7 @@ void ri::InitReimplementation()
 		pVerifyVersionInfo = (PFNVERIFYVERSIONINFO)GetProcAddress(hLibKernel32, "VerifyVersionInfo" UNIVER);
 		pInitializeCriticalSectionAndSpinCount = (PFNINITIALIZECRITICALSECTIONANDSPINCOUNT)GetProcAddress(hLibKernel32, "InitializeCriticalSectionAndSpinCount");
 		pTryEnterCriticalSection = (PFNTRYENTERCRITICALSECTION)GetProcAddress(hLibKernel32, "TryEnterCriticalSection");
+		pQueueUserAPC = (PFNQUEUEUSERAPC)GetProcAddress(hLibKernel32, "QueueUserAPC");
 	}
 
 	if (hLibUser32)
@@ -97,6 +128,7 @@ void ri::InitReimplementation()
 		pGetMonitorInfo = (PFNGETMONITORINFO)GetProcAddress(hLibUser32, "GetMonitorInfo" UNIVER);
 		pMonitorFromPoint = (PFNMONITORFROMPOINT)GetProcAddress(hLibUser32, "MonitorFromPoint");
 		pAnimateWindow = (PFNANIMATEWINDOW)GetProcAddress(hLibUser32, "AnimateWindow");
+		pTrackMouseEvent = (PFNTRACKMOUSEEVENT)GetProcAddress(hLibUser32, "TrackMouseEvent");
 	}
 
 	if (hLibGdi32)
@@ -120,6 +152,15 @@ void ri::InitReimplementation()
 	if (hLibShlwapi)
 	{
 		pPathFileExists = (PFNPATHFILEEXISTS)GetProcAddress(hLibShlwapi, "PathFileExists" UNIVER);
+	}
+
+	if (hLibCrypt32)
+	{
+		pCertOpenSystemStoreA        = (PFNCERTOPENSYSTEMSTOREA)       GetProcAddress(hLibCrypt32, "CertOpenSystemStoreA");
+		pCertCloseStore              = (PFNCERTCLOSESTORE)             GetProcAddress(hLibCrypt32, "CertCloseStore");
+		pCertFreeCertificateContext  = (PFNCERTFREECERTIFICATECONTEXT) GetProcAddress(hLibCrypt32, "CertFreeCertificateContext");
+		pCertFindCertificateInStore  = (PFNCERTFINDCERTIFICATEINSTORE) GetProcAddress(hLibCrypt32, "CertFindCertificateInStore");
+		pCertEnumCertificatesInStore = (PFNCERTENUMCERTIFICATESINSTORE)GetProcAddress(hLibCrypt32, "CertEnumCertificatesInStore");
 	}
 }
 
@@ -481,6 +522,20 @@ LONG ri::InterlockedExchangeAdd(LONG* Addend, LONG Value)
 #endif
 }
 
+DWORD ri::QueueUserAPC(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData)
+{
+	// Asio uses this (win_thread.ipp), in its `join()` function.
+	// It doesn't check for the return value or anything.
+	//
+	// As far as I can tell, it's purely there to cancel IO operations. I don't
+	// know of an alternative... so stubbed it is.
+	if (pQueueUserAPC)
+		return pQueueUserAPC(pfnAPC, hThread, dwData);
+
+	return 0;
+
+}
+
 BOOL ri::TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection)
 {
 	if (pTryEnterCriticalSection)
@@ -488,6 +543,15 @@ BOOL ri::TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection)
 
 	// NOTE: Currently, neither iprog::recursive_mutex::try_lock nor iprog::mutex::try_lock
 	// seem to be used. So, on Windows 95, we're safe, for now ...
+	return FALSE;
+}
+
+BOOL ri::TrackMouseEvent(LPTRACKMOUSEEVENT lptme)
+{
+	if (pTrackMouseEvent)
+		return pTrackMouseEvent(lptme);
+
+	// TODO?
 	return FALSE;
 }
 
@@ -613,4 +677,44 @@ HPEN ri::GetDCPen()
 
 	ri::internal::CreateDCPenIfNeeded();
 	return ri::internal::_dcPen;
+}
+
+HCERTSTORE ri::CertOpenSystemStoreA(HCRYPTPROV_LEGACY hProv, LPCSTR szSubSystemProtocol)
+{
+	//if (pCertOpenSystemStoreA)
+	//	return pCertOpenSystemStoreA(hProv, szSubSystemProtocol);
+
+	return NULL;
+}
+
+BOOL ri::CertCloseStore(HCERTSTORE hStore, DWORD dwFlags)
+{
+	//if (pCertCloseStore)
+	//	return pCertCloseStore(hStore, dwFlags);
+
+	return FALSE;
+}
+
+PCCERT_CONTEXT ri::CertFindCertificateInStore(HCERTSTORE hs, DWORD dw1, DWORD dw2, DWORD dw3, const void* p1, PCCERT_CONTEXT pccc1)
+{
+	//if (pCertFindCertificateInStore)
+	//	return pCertFindCertificateInStore(hs, dw1, dw2, dw3, p1, pccc1);
+
+	return NULL;
+}
+
+BOOL ri::CertFreeCertificateContext(PCCERT_CONTEXT pcc)
+{
+	//if (pCertFreeCertificateContext)
+	//	return pCertFreeCertificateContext(pcc);
+
+	return FALSE;
+}
+
+PCCERT_CONTEXT ri::CertEnumCertificatesInStore(HCERTSTORE hs, PCCERT_CONTEXT pcc)
+{
+	//if (pCertEnumCertificatesInStore)
+	//	return pCertEnumCertificatesInStore(hs, pcc);
+
+	return NULL;
 }

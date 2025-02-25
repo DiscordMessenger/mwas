@@ -130,6 +130,7 @@ namespace ri
 	BOOL InitializeCriticalSectionAndSpinCount(LPCRITICAL_SECTION lpCriticalSection, DWORD dwSpinCount);
 	BOOL TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection);
 	LONG InterlockedExchangeAdd(LONG* Addend, LONG Value);
+	DWORD QueueUserAPC(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData);
 
 	// Msimg32
 	bool HaveMsImg();
@@ -151,6 +152,7 @@ namespace ri
 	BOOL GetGestureInfo(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
 	BOOL GetMonitorInfo(HMONITOR hmon, LPMONITORINFO lpmi);
 	HMONITOR MonitorFromPoint(POINT pt, DWORD flags);
+	BOOL TrackMouseEvent(LPTRACKMOUSEEVENT lptme);
 
 	// Gdi32
 	COLORREF SetDCBrushColor(HDC hdc, COLORREF color);
