@@ -2,6 +2,7 @@
 #include <tchar.h>
 #include "ri/reimpl.hpp"
 #include "ri/recrypt.hpp"
+#include "ri/resock2.hpp"
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -28,6 +29,7 @@ namespace ri
 	HMODULE hLibMsimg32;
 	HMODULE hLibShlwapi;
 	HMODULE hLibCrypt32;
+	HMODULE hLibWs2_32;
 
 	// Kernel32
 	typedef ULONGLONG(WINAPI* PFNVERSETCONDITIONMASK)(ULONGLONG ConditionMask, DWORD TypeMask, BYTE Condition);
@@ -70,6 +72,15 @@ namespace ri
 	typedef PCCERT_CONTEXT(WINAPI* PFNCERTFINDCERTIFICATEINSTORE) (HCERTSTORE, DWORD, DWORD, DWORD, const void*, PCCERT_CONTEXT);
 	typedef BOOL          (WINAPI* PFNCERTFREECERTIFICATECONTEXT) (PCCERT_CONTEXT);
 	typedef PCCERT_CONTEXT(WINAPI* PFNCERTENUMCERTIFICATESINSTORE)(HCERTSTORE, PCCERT_CONTEXT);
+
+	// Ws2_32
+	typedef INT(WSAAPI* PFNWSASTRINGTOADDRESSA)(LPSTR, INT, LPWSAPROTOCOL_INFOA, LPSOCKADDR, LPINT);
+	typedef INT(WSAAPI* PFNWSAADDRESSTOSTRINGA)(LPSOCKADDR, DWORD, LPWSAPROTOCOL_INFOA, LPSTR, LPDWORD);
+	typedef INT(WSAAPI* PFNWSASEND)(SOCKET, LPWSABUF, DWORD, LPDWORD, DWORD, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+	typedef INT(WSAAPI* PFNWSASENDTO)(SOCKET, LPWSABUF, DWORD, LPDWORD, DWORD, const sockaddr*, int, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+	typedef INT(WSAAPI* PFNWSARECV)(SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+	typedef INT(WSAAPI* PFNWSARECVFROM)(SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD, sockaddr*, LPINT, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+	typedef SOCKET(WSAAPI* PFNWSASOCKETA)(int, int, int, LPWSAPROTOCOL_INFOA, GROUP, DWORD);
 		
 	PFNGETFILESIZEEX pGetFileSizeEx;
 	PFNSETFILEPOINTEREX pSetFilePointerEx;
@@ -99,6 +110,13 @@ namespace ri
 	PFNCERTFINDCERTIFICATEINSTORE pCertFindCertificateInStore;
 	PFNCERTFREECERTIFICATECONTEXT pCertFreeCertificateContext;
 	PFNCERTENUMCERTIFICATESINSTORE pCertEnumCertificatesInStore;
+	PFNWSAADDRESSTOSTRINGA pWSAAddressToStringA;
+	PFNWSASTRINGTOADDRESSA pWSAStringToAddressA;
+	PFNWSASEND pWSASend;
+	PFNWSASENDTO pWSASendTo;
+	PFNWSARECV pWSARecv;
+	PFNWSARECVFROM pWSARecvFrom;
+	PFNWSASOCKETA pWSASocketA;
 }
 // namespace ri
 
@@ -112,6 +130,7 @@ void ri::InitReimplementation()
 	hLibMsimg32  = LoadLibrary(TEXT("msimg32.dll"));
 	hLibShlwapi  = LoadLibrary(TEXT("shlwapi.dll"));
 	hLibCrypt32  = LoadLibrary(TEXT("crypt32.dll"));
+	hLibWs2_32   = LoadLibrary(TEXT("ws2_32.dll"));
 
 	if (hLibKernel32)
 	{
@@ -167,6 +186,17 @@ void ri::InitReimplementation()
 		pCertFreeCertificateContext  = (PFNCERTFREECERTIFICATECONTEXT) GetProcAddress(hLibCrypt32, "CertFreeCertificateContext");
 		pCertFindCertificateInStore  = (PFNCERTFINDCERTIFICATEINSTORE) GetProcAddress(hLibCrypt32, "CertFindCertificateInStore");
 		pCertEnumCertificatesInStore = (PFNCERTENUMCERTIFICATESINSTORE)GetProcAddress(hLibCrypt32, "CertEnumCertificatesInStore");
+	}
+
+	if (hLibWs2_32)
+	{
+		pWSAAddressToStringA = (PFNWSAADDRESSTOSTRINGA) GetProcAddress(hLibWs2_32, "WSAAddressToStringA");
+		pWSAStringToAddressA = (PFNWSASTRINGTOADDRESSA) GetProcAddress(hLibWs2_32, "WSAStringToAddressA");
+		pWSASend             = (PFNWSASEND)             GetProcAddress(hLibWs2_32, "WSASend");
+		pWSASendTo           = (PFNWSASENDTO)           GetProcAddress(hLibWs2_32, "WSASendTo");
+		pWSARecv             = (PFNWSARECV)             GetProcAddress(hLibWs2_32, "WSARecv");
+		pWSARecvFrom         = (PFNWSARECVFROM)         GetProcAddress(hLibWs2_32, "WSARecvFrom");
+		pWSASocketA          = (PFNWSASOCKETA)          GetProcAddress(hLibWs2_32, "WSASocketA");
 	}
 
 	// Test if atomic instructions are supported
@@ -585,6 +615,231 @@ BOOL ri::TrackMouseEvent(LPTRACKMOUSEEVENT lptme)
 
 	// TODO?
 	return FALSE;
+}
+
+#ifndef EAFNOSUPPORT
+#define EAFNOSUPPORT 102
+#endif
+
+INT ri::WSAStringToAddressA(LPSTR addressString, INT addressFamily, LPWSAPROTOCOL_INFOA protocolInfo, LPSOCKADDR address, LPINT addressLength)
+{
+	if (pWSAStringToAddressA)
+		return pWSAStringToAddressA(addressString, addressFamily, protocolInfo, address, addressLength);
+
+	// Reimplementation
+	if (addressFamily != AF_INET)
+	{
+		// IPv6 isn't supported by Winsock 1 anyway AFAIK
+		::WSASetLastError(EAFNOSUPPORT);
+		return SOCKET_ERROR;
+	}
+
+	PSOCKADDR_IN addrIn = (PSOCKADDR_IN)address;
+
+	addrIn->sin_family = addressFamily;
+	addrIn->sin_addr.s_addr = inet_addr(addressString);
+	addrIn->sin_port = 0;
+
+	if (addrIn->sin_addr.s_addr == INADDR_NONE)
+	{
+		WSASetLastError(WSAEINVAL);
+		return SOCKET_ERROR;
+	}
+
+	return 0;
+}
+
+INT ri::WSAAddressToStringA(LPSOCKADDR address, DWORD addressLength, LPWSAPROTOCOL_INFOA protocolInfo, LPSTR addressString, LPDWORD addressStringLength)
+{
+	if (pWSAAddressToStringA)
+		return pWSAAddressToStringA(address, addressLength, protocolInfo, addressString, addressStringLength);
+
+	// Reimplementation
+	if (address->sa_family != AF_INET)
+	{
+		// IPv6 isn't supported by Winsock 1 anyway AFAIK
+		::WSASetLastError(EAFNOSUPPORT);
+		return SOCKET_ERROR;
+	}
+
+	PSOCKADDR_IN addrIn = (PSOCKADDR_IN)address;
+
+	if (addressStringLength && *addressStringLength != 0)
+	{
+		strncpy(addressString, inet_ntoa(addrIn->sin_addr), *addressStringLength);
+		addressString[*addressStringLength - 1] = 0;
+		*addressStringLength = strlen(addressString);
+	}
+	else
+	{
+		strcpy(addressString, inet_ntoa(addrIn->sin_addr));
+		*addressStringLength = strlen(addressString);
+	}
+
+	return 0;
+}
+
+//! I don't know how reliable this is.
+INT ri::WSASend(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent, DWORD dwFlags, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+{
+	if (pWSASend)
+		return pWSASend(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpOverlapped, lpCompletionRoutine);
+
+	if (!lpBuffers || dwBufferCount == 0 || !lpNumberOfBytesSent)
+	{
+		::WSASetLastError(WSAEINVAL);
+		return SOCKET_ERROR;
+	}
+
+	DWORD totalBytesSent = 0;
+
+	for (DWORD i = 0; i < dwBufferCount; ++i)
+	{
+		DWORD bytesRemaining = lpBuffers[i].len;
+		const char* bufferPtr = lpBuffers[i].buf;
+
+		while (bytesRemaining > 0)
+		{
+			int bytesSent = ::send(s, bufferPtr, bytesRemaining, dwFlags);
+			if (bytesSent == SOCKET_ERROR)
+				return SOCKET_ERROR;
+
+			bytesRemaining -= bytesSent;
+			bufferPtr += bytesSent;
+			totalBytesSent += bytesSent;
+		}
+	}
+
+	*lpNumberOfBytesSent = totalBytesSent;
+	return 0;
+}
+
+INT ri::WSASendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent, DWORD dwFlags, const sockaddr* lpTo, int iTolen, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+{
+	if (pWSASendTo)
+		return pWSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpTo, iTolen, lpOverlapped, lpCompletionRoutine);
+
+	if (!lpBuffers || dwBufferCount == 0 || !lpNumberOfBytesSent || !lpTo)
+	{
+		::WSASetLastError(WSAEINVAL);
+		return SOCKET_ERROR;
+	}
+
+	DWORD totalBytesSent = 0;
+
+	for (DWORD i = 0; i < dwBufferCount; ++i)
+	{
+		DWORD bytesRemaining = lpBuffers[i].len;
+		const char* bufferPtr = lpBuffers[i].buf;
+
+		while (bytesRemaining > 0)
+		{
+			int bytesSent = ::sendto(s, bufferPtr, bytesRemaining, dwFlags, lpTo, iTolen);
+			if (bytesSent == SOCKET_ERROR)
+				return SOCKET_ERROR;
+
+			bytesRemaining -= bytesSent;
+			bufferPtr += bytesSent;
+			totalBytesSent += bytesSent;
+		}
+	}
+
+	*lpNumberOfBytesSent = totalBytesSent;
+	return 0;
+}
+
+INT ri::WSARecv(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd, LPDWORD lpdwFlags, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) 
+{
+	if (pWSARecv)
+		return pWSARecv(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpdwFlags, lpOverlapped, lpCompletionRoutine);
+	
+	if (!lpBuffers || dwBufferCount == 0 || !lpNumberOfBytesRecvd || !lpdwFlags)
+	{
+		::WSASetLastError(WSAEINVAL);
+		return SOCKET_ERROR;
+	}
+
+	DWORD totalBytesRecvd = 0;
+
+	for (DWORD i = 0; i < dwBufferCount; ++i)
+	{
+		DWORD bytesRemaining = lpBuffers[i].len;
+		char* bufferPtr = lpBuffers[i].buf;
+
+		int bytesRecvd = ::recv(s, bufferPtr, bytesRemaining, *lpdwFlags);
+		if (bytesRecvd == SOCKET_ERROR)
+			return SOCKET_ERROR;
+
+		totalBytesRecvd += bytesRecvd;
+	}
+
+	*lpNumberOfBytesRecvd = totalBytesRecvd;
+	return 0;
+}
+
+INT ri::WSARecvFrom(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd, LPDWORD lpdwFlags, sockaddr* lpFrom, int* lpFromlen, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+{
+	if (pWSARecvFrom)
+		return pWSARecvFrom(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpdwFlags, lpFrom, lpFromlen, lpOverlapped, lpCompletionRoutine);
+
+	if (!lpBuffers || dwBufferCount == 0 || !lpNumberOfBytesRecvd || !lpdwFlags)
+	{
+		::WSASetLastError(WSAEINVAL);
+		return SOCKET_ERROR;
+	}
+
+	DWORD totalBytesRecvd = 0;
+
+	for (DWORD i = 0; i < dwBufferCount; ++i)
+	{
+		DWORD bytesRemaining = lpBuffers[i].len;
+		char* bufferPtr = lpBuffers[i].buf;
+
+		while (bytesRemaining > 0)
+		{
+			int bytesRecvd = ::recvfrom(s, bufferPtr, bytesRemaining, *lpdwFlags, lpFrom, lpFromlen);
+			if (bytesRecvd == SOCKET_ERROR)
+			{
+				int error = ::WSAGetLastError();
+				if (error == WSAEWOULDBLOCK)
+					continue; // Try again if non-blocking
+				
+				return SOCKET_ERROR;
+			}
+
+			if (bytesRecvd == 0)
+				break; // Connection closed
+
+			bytesRemaining -= bytesRecvd;
+			bufferPtr += bytesRecvd;
+			totalBytesRecvd += bytesRecvd;
+		}
+	}
+
+	*lpNumberOfBytesRecvd = totalBytesRecvd;
+	return 0;
+}
+
+SOCKET ri::WSASocketA(int af, int type, int protocol, LPWSAPROTOCOL_INFOA lpProtocolInfo, GROUP g, DWORD dwFlags)
+{
+	if (pWSASocketA)
+		return pWSASocketA(af, type, protocol, lpProtocolInfo, g, dwFlags);
+
+	return ::socket(af, type, protocol);
+}
+
+bool ri::SupportsWSARecv()
+{
+	return pWSARecv != NULL;
+}
+
+int ri::GetWSVersion()
+{
+	if (!SupportsWSARecv())
+		// we should NOT initialize WS2 if we don't have it!
+		return 0x0101;
+
+	return 0x0002;
 }
 
 namespace ri {

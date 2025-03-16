@@ -1,5 +1,6 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 // This part of the DiscordMessenger project is designed to reimplement APIs missing
