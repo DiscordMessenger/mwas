@@ -1,3 +1,4 @@
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <cassert>
 #include <tchar.h>
 #include "ri/reimpl.hpp"
@@ -569,7 +570,7 @@ LONG ri::InterlockedExchangeAdd(LONG* Addend, LONG Value)
 	// Please I beg you. Do not reference Kernel32.dll!InterlockedExchangeAdd here.
 	// Nope, neither variant seems to do that, instead generating a `lock xadd` like they should.
 #ifdef _MSC_VER
-	return _InterlockedExchangeAdd(Addend, Value);
+	return ::_InterlockedExchangeAdd(Addend, Value);
 #else
 	if (s_bSupportsAtomics)
 	{
@@ -999,40 +1000,40 @@ int ri::GetWordEllipsisFlag()
 
 HCERTSTORE ri::CertOpenSystemStoreA(HCRYPTPROV_LEGACY hProv, LPCSTR szSubSystemProtocol)
 {
-	//if (pCertOpenSystemStoreA)
-	//	return pCertOpenSystemStoreA(hProv, szSubSystemProtocol);
+	if (pCertOpenSystemStoreA)
+		return pCertOpenSystemStoreA(hProv, szSubSystemProtocol);
 
 	return NULL;
 }
 
 BOOL ri::CertCloseStore(HCERTSTORE hStore, DWORD dwFlags)
 {
-	//if (pCertCloseStore)
-	//	return pCertCloseStore(hStore, dwFlags);
+	if (pCertCloseStore)
+		return pCertCloseStore(hStore, dwFlags);
 
 	return FALSE;
 }
 
 PCCERT_CONTEXT ri::CertFindCertificateInStore(HCERTSTORE hs, DWORD dw1, DWORD dw2, DWORD dw3, const void* p1, PCCERT_CONTEXT pccc1)
 {
-	//if (pCertFindCertificateInStore)
-	//	return pCertFindCertificateInStore(hs, dw1, dw2, dw3, p1, pccc1);
+	if (pCertFindCertificateInStore)
+		return pCertFindCertificateInStore(hs, dw1, dw2, dw3, p1, pccc1);
 
 	return NULL;
 }
 
 BOOL ri::CertFreeCertificateContext(PCCERT_CONTEXT pcc)
 {
-	//if (pCertFreeCertificateContext)
-	//	return pCertFreeCertificateContext(pcc);
+	if (pCertFreeCertificateContext)
+		return pCertFreeCertificateContext(pcc);
 
 	return FALSE;
 }
 
 PCCERT_CONTEXT ri::CertEnumCertificatesInStore(HCERTSTORE hs, PCCERT_CONTEXT pcc)
 {
-	//if (pCertEnumCertificatesInStore)
-	//	return pCertEnumCertificatesInStore(hs, pcc);
+	if (pCertEnumCertificatesInStore)
+		return pCertEnumCertificatesInStore(hs, pcc);
 
 	return NULL;
 }
