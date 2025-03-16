@@ -979,10 +979,22 @@ int ri::GetHalfToneStretchMode()
 
 	// TODO: Is this just a red herring?
 
-	if (LOBYTE(GetVersion()) < 5)
-		return COLORONCOLOR;
+	//if (LOBYTE(GetVersion()) < 5)
+	//	return COLORONCOLOR;
 
 	return HALFTONE;
+}
+
+int ri::GetWordEllipsisFlag()
+{
+	// WINDOWS NT 3.51: I think setting this flag to DrawText makes
+	// text not render.  Which is a real bummer.  The windows headers
+	// check if WINNT >= 0x0400 so that probably explains it.
+
+	if (LOBYTE(GetVersion()) < 4)
+		return 0;
+
+	return DT_WORD_ELLIPSIS;
 }
 
 HCERTSTORE ri::CertOpenSystemStoreA(HCRYPTPROV_LEGACY hProv, LPCSTR szSubSystemProtocol)

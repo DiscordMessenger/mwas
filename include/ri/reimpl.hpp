@@ -163,6 +163,10 @@ namespace ri
 	// of relying on GetStockBrush:
 	HBRUSH GetDCBrush();
 	HPEN GetDCPen();
+
+	// Some flags that would/might actually cause things to
+	// break if they were set on earlier versions of Windows
 	int GetHalfToneStretchMode();
+	int GetWordEllipsisFlag();
 }
 // namespace ri
