@@ -162,5 +162,6 @@ namespace ri
 	// of relying on GetStockBrush:
 	HBRUSH GetDCBrush();
 	HPEN GetDCPen();
+	int GetHalfToneStretchMode();
 }
 // namespace ri

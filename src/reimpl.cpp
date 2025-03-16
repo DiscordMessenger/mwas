@@ -13,8 +13,14 @@
 #define UNIVER "A"
 #endif
 
+#ifdef MINGW_SPECIFIC_HACKS
+extern "C" int _CRT_MT;
+#endif
+
 namespace ri
 {
+	static bool s_bSupportsAtomics = false;
+
 	HMODULE hLibKernel32;
 	HMODULE hLibUser32;
 	HMODULE hLibGdi32;
@@ -161,6 +167,23 @@ void ri::InitReimplementation()
 		pCertFreeCertificateContext  = (PFNCERTFREECERTIFICATECONTEXT) GetProcAddress(hLibCrypt32, "CertFreeCertificateContext");
 		pCertFindCertificateInStore  = (PFNCERTFINDCERTIFICATEINSTORE) GetProcAddress(hLibCrypt32, "CertFindCertificateInStore");
 		pCertEnumCertificatesInStore = (PFNCERTENUMCERTIFICATESINSTORE)GetProcAddress(hLibCrypt32, "CertEnumCertificatesInStore");
+	}
+
+	// Test if atomic instructions are supported
+	s_bSupportsAtomics = true;
+
+	// If we are Windows NT and our version >= 4, then atomics should be used.
+	OSVERSIONINFO ovi{};
+	ovi.dwOSVersionInfoSize = sizeof ovi;
+	GetVersionEx(&ovi);
+
+	if (ovi.dwMajorVersion < 4 || ovi.dwPlatformId != VER_PLATFORM_WIN32_NT)
+	{
+		s_bSupportsAtomics = false;
+
+#ifdef MINGW_SPECIFIC_HACKS
+		_CRT_MT = 0;
+#endif
 	}
 }
 
@@ -518,7 +541,16 @@ LONG ri::InterlockedExchangeAdd(LONG* Addend, LONG Value)
 #ifdef _MSC_VER
 	return _InterlockedExchangeAdd(Addend, Value);
 #else
-	return __atomic_fetch_add(Addend, Value, __ATOMIC_SEQ_CST);
+	if (s_bSupportsAtomics)
+	{
+		return __atomic_fetch_add(Addend, Value, __ATOMIC_SEQ_CST);
+	}
+	else
+	{
+		LONG Old = *Addend;
+		*Addend += Value;
+		return Old;
+	}
 #endif
 }
 
@@ -677,6 +709,25 @@ HPEN ri::GetDCPen()
 
 	ri::internal::CreateDCPenIfNeeded();
 	return ri::internal::_dcPen;
+}
+
+int ri::GetHalfToneStretchMode()
+{
+	// WINDOWS 95: For some reason, somehow, SHLWAPI's SHGetInverseCMAP function calls
+	// SHInterlockedCompareExchange.  This is a guess.  According to the MSDN docs,
+	// it "retrieves the inverse color table mapping for the halftone palette".
+	// Given it mentions halftone, I can only assume that the HALFTONE setting is
+	// responsible. But this is a random shot in the dark.
+
+	// No, there are no other references to SHInterlockedCompareExchange, other than
+	// its export table entry, and a sub function called only by SHGetInverseCMAP.
+
+	// TODO: Is this just a red herring?
+
+	if (LOBYTE(GetVersion()) < 5)
+		return COLORONCOLOR;
+
+	return HALFTONE;
 }
 
 HCERTSTORE ri::CertOpenSystemStoreA(HCRYPTPROV_LEGACY hProv, LPCSTR szSubSystemProtocol)
