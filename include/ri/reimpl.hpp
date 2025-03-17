@@ -9,45 +9,7 @@
 // NOTE: This header is in "exinclude" (and its associated source in external/) because
 // I want to access it easily from asio sources.
 
-// Here are the APIs we will reimplement*:
-
-/*
-IMPORTS WHICH NT 4 DOESN'T HAVE:
-
-KERNEL32:
-	[X] GetFileSizeEx                 -- Used by asio::detail::win_iocp_file_service
-	[X] SetFilePointerEx              -- Used by asio::detail::win_iocp_file_service
-	[X] VerSetConditionMask           -- Used by asio::detail::win_iocp_io_context
-	[X] RegisterWaitForSingleObject   -- Used by asio::detail::win_object_handle_service
-	[X] UnregisterWaitEx              -- Used by asio::detail::win_object_handle_service
-	[ ] VerifyVersionInfo             -- Used by asio::detail::win_iocp_io_context
-
-MSIMG32: // All missing
-	[X] AlphaBlend      -- FillGradientColors
-	[X] GradientFill    -- MessageList, FillGradientColors
-	[X] TransparentBlt  -- DrawBitmap
-
-SHELL32:
-	[X] SHGetFolderPathW -- Used by WinUtils / SetupCachePathIfNeeded
-
-SHLWAPI: // All missing
-	[X] PathFileExistsW  -- Used by WinUtils / FileExists
-
-USER32:
-	[X] GetMenuInfo -- Used by MessageList
-	[X] SetMenuInfo -- Used by MessageList
-	[X] GetGestureInfo -- Used by the touch control support
-	[X] GetMonitorInfo -- Used by profile popout
-	[X] MonitorFromPoint -- Used by profile popout
-	[X] AnimateWindow -- Used by profile popout
-
-GDI32:
-	[X] SetDCBrushColor -- RichEmbedItem, MessageList, RoleList
-	[X] SetDCPenColor   -- GuildHeader, GuildLister, MessageList, RoleList
-
-*/
-
-// * - Sometimes we will emulate them, sometimes we will simply make them do nothing
+// Sometimes we will emulate them, sometimes we will simply make them do nothing
 
 #ifndef SHGetFolderPath
 # ifdef UNICODE
@@ -55,6 +17,32 @@ GDI32:
 # else
 #  define SHGetFolderPath SHGetFolderPathA
 # endif
+#endif
+
+#ifndef SHGetFileInfo
+# ifdef UNICODE
+#  define SHGetFileInfo SHGetFileInfoW
+# else
+#  define SHGetFileInfo SHGetFileInfoA
+# endif
+#endif
+
+#ifndef Shell_NotifyIcon
+# ifdef UNICODE
+#  define Shell_NotifyIcon Shell_NotifyIconW
+# else
+#  define Shell_NotifyIcon Shell_NotifyIconA
+# endif
+#endif
+
+#ifdef UNICODE
+typedef struct _SHFILEINFOW SHFILEINFO;
+typedef struct _NOTIFYICONDATAW NOTIFYICONDATA;
+typedef struct _OSVERSIONINFOW OSVERSIONINFO;
+#else
+typedef struct _SHFILEINFOA SHFILEINFO;
+typedef struct _NOTIFYICONDATAA NOTIFYICONDATA;
+typedef struct _OSVERSIONINFOA OSVERSIONINFO;
 #endif
 
 #ifndef PathFileExists
@@ -78,6 +66,22 @@ GDI32:
 #  define VerifyVersionInfo VerifyVersionInfoW
 # else
 #  define VerifyVersionInfo VerifyVersionInfoA
+# endif
+#endif
+
+#ifndef LoadImage
+# ifdef UNICODE
+#  define LoadImage LoadImageW
+# else
+#  define LoadImage LoadImageA
+# endif
+#endif
+
+#ifndef GetVersionEx
+# ifdef UNICODE
+#  define GetVersionEx GetVersionExW
+# else
+#  define GetVersionEx GetVersionExA
 # endif
 #endif
 
@@ -115,6 +119,8 @@ DECLARE_HANDLE(HGESTUREINFO);
 
 #endif
 
+typedef struct _IMAGELIST* HIMAGELIST;
+
 namespace ri
 {
 	// Initialize the reimplementations.  If available, use the Windows provided
@@ -132,6 +138,7 @@ namespace ri
 	BOOL TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection);
 	LONG InterlockedExchangeAdd(LONG* Addend, LONG Value);
 	DWORD QueueUserAPC(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData);
+	BOOL GetVersionEx(LPOSVERSIONINFO lpVersionInformation);
 
 	// Msimg32
 	bool HaveMsImg();
@@ -142,6 +149,8 @@ namespace ri
 	// Shell32
 	// NOTE: This is allowed to manifest as a macro.  We only define the version we actually use.
 	HRESULT SHGetFolderPath(HWND hwnd, int csidl, HANDLE hndl, DWORD dwf, LPTSTR szp);
+	DWORD_PTR SHGetFileInfo(LPCTSTR pszPath, DWORD dwFileAttributes, SHFILEINFO* psfi, UINT cbFileInfo, UINT uFlags);
+	BOOL Shell_NotifyIcon(DWORD dwMessage, NOTIFYICONDATA* nid);
 
 	// Shlwapi
 	BOOL PathFileExists(LPCTSTR pszPath);
@@ -154,10 +163,17 @@ namespace ri
 	BOOL GetMonitorInfo(HMONITOR hmon, LPMONITORINFO lpmi);
 	HMONITOR MonitorFromPoint(POINT pt, DWORD flags);
 	BOOL TrackMouseEvent(LPTRACKMOUSEEVENT lptme);
+	BOOL DrawEdge(HDC, LPRECT, UINT, UINT);
+	BOOL DrawIconEx(HDC, int, int, HICON, int, int, UINT, HBRUSH, UINT);
+	BOOL GetScrollInfo(HWND, int, LPSCROLLINFO);
+	BOOL SetScrollInfo(HWND, int, LPSCROLLINFO, BOOL);
+	HBRUSH GetSysColorBrush(int);
+	HBITMAP LoadImage(HINSTANCE, LPCTSTR, UINT, int, int, UINT);
 
 	// Gdi32
 	COLORREF SetDCBrushColor(HDC hdc, COLORREF color);
 	COLORREF SetDCPenColor(HDC hdc, COLORREF color);
+	HBITMAP CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, VOID** ppvBits, HANDLE hSection, DWORD offset);
 	
 	// Not actually part of win32, but we have to do this instead
 	// of relying on GetStockBrush:
@@ -168,5 +184,15 @@ namespace ri
 	// break if they were set on earlier versions of Windows
 	int GetHalfToneStretchMode();
 	int GetWordEllipsisFlag();
+	
+	// Ole32
+	HRESULT CoInitialize(LPVOID lpv);
+
+	// ComCtl32
+	HIMAGELIST ImageList_Create(int cx, int cy, UINT flags, int cInitial, int cGrow);
+	BOOL ImageList_Destroy(HIMAGELIST himl);
+	BOOL ImageList_Add(HIMAGELIST himl, HBITMAP hbmImage, HBITMAP hbmMask);
+	int ImageList_GetImageCount(HIMAGELIST himl);
+	int ImageList_ReplaceIcon(HIMAGELIST himl, int i, HICON hicon);
 }
 // namespace ri

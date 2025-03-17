@@ -9,6 +9,9 @@
 #include <intrin.h>
 #endif
 
+#include <commctrl.h>
+#include <shellapi.h>
+
 #ifdef UNICODE
 #define UNIVER "W"
 #else
@@ -31,6 +34,8 @@ namespace ri
 	HMODULE hLibShlwapi;
 	HMODULE hLibCrypt32;
 	HMODULE hLibWs2_32;
+	HMODULE hLibOle32;
+	HMODULE hLibComCtl32;
 
 	// Kernel32
 	typedef ULONGLONG(WINAPI* PFNVERSETCONDITIONMASK)(ULONGLONG ConditionMask, DWORD TypeMask, BYTE Condition);
@@ -41,6 +46,7 @@ namespace ri
 	typedef BOOL(WINAPI* PFNVERIFYVERSIONINFO)(LPOSVERSIONINFOEX pVersionInfo, DWORD typeMask, DWORDLONG conditionMask);
 	typedef BOOL(WINAPI* PFNINITIALIZECRITICALSECTIONANDSPINCOUNT)(LPCRITICAL_SECTION lpCriticalSection, DWORD dwSpinCount);
 	typedef BOOL(WINAPI* PFNTRYENTERCRITICALSECTION)(LPCRITICAL_SECTION lpCriticalSection);
+	typedef BOOL(WINAPI* PFNGETVERSIONEX)(OSVERSIONINFO*);
 	typedef DWORD(WINAPI* PFNQUEUEUSERAPC)(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData);
 
 	// MsImg32
@@ -50,6 +56,8 @@ namespace ri
 
 	// Shell32
 	typedef HRESULT(WINAPI* PFNSHGETFOLDERPATH)(HWND hwnd, int csidl, HANDLE hndl, DWORD dwf, LPTSTR szp);
+	typedef DWORD_PTR(WINAPI* PFNSHGETFILEINFO)(LPCTSTR pszPath, DWORD dwfa, SHFILEINFO* psfi, UINT, UINT);
+	typedef BOOL(WINAPI* PFNSHELL_NOTIFYICON)(DWORD, PNOTIFYICONDATA);
 
 	// Shlwapi
 	typedef BOOL(WINAPI* PFNPATHFILEEXISTS)(LPCTSTR pszPath);
@@ -57,6 +65,7 @@ namespace ri
 	// Gdi32
 	typedef COLORREF(WINAPI* PFNSETDCBRUSHCOLOR)(HDC hdc, COLORREF color);
 	typedef COLORREF(WINAPI* PFNSETDCPENCOLOR)(HDC hdc, COLORREF color);
+	typedef HBITMAP(WINAPI* PFNCREATEDIBSECTION)(HDC hdc, const BITMAPINFO*, UINT, VOID**, HANDLE, DWORD);
 
 	// User32
 	typedef BOOL(WINAPI* PFNGETMENUINFO)(HMENU hMenu, LPMENUINFO lpMenuInfo);
@@ -66,6 +75,12 @@ namespace ri
 	typedef BOOL(WINAPI* PFNGETMONITORINFO)(HMONITOR hmon, LPMONITORINFO lpmi);
 	typedef BOOL(WINAPI* PFNANIMATEWINDOW)(HWND hwnd, DWORD time, DWORD flags);
 	typedef BOOL(WINAPI* PFNTRACKMOUSEEVENT)(LPTRACKMOUSEEVENT lpTME);
+	typedef BOOL(WINAPI* PFNDRAWEDGE)(HDC, LPRECT, UINT, UINT);
+	typedef BOOL(WINAPI* PFNDRAWICONEX)(HDC, int, int, HICON, int, int, UINT, HBRUSH, UINT);
+	typedef BOOL(WINAPI* PFNGETSCROLLINFO)(HWND, int, LPSCROLLINFO);
+	typedef BOOL(WINAPI* PFNSETSCROLLINFO)(HWND, int, LPSCROLLINFO, BOOL);
+	typedef HBRUSH(WINAPI* PFNGETSYSCOLORBRUSH)(int);
+	typedef HBITMAP(WINAPI* PFNLOADIMAGE)(HINSTANCE, LPCTSTR, UINT, int, int, UINT);
 
 	// Crypt32
 	typedef HCERTSTORE    (WINAPI* PFNCERTOPENSYSTEMSTOREA)       (HCRYPTPROV_LEGACY, LPCSTR);
@@ -82,7 +97,17 @@ namespace ri
 	typedef INT(WSAAPI* PFNWSARECV)(SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
 	typedef INT(WSAAPI* PFNWSARECVFROM)(SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD, sockaddr*, LPINT, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
 	typedef SOCKET(WSAAPI* PFNWSASOCKETA)(int, int, int, LPWSAPROTOCOL_INFOA, GROUP, DWORD);
-		
+
+	// Comctl32
+	typedef HIMAGELIST(WINAPI* PFNIMAGELIST_CREATE)(int, int, UINT, int, int);
+	typedef INT(WINAPI* PFNIMAGELIST_ADD)(HIMAGELIST, HBITMAP, HBITMAP);
+	typedef BOOL(WINAPI* PFNIMAGELIST_DESTROY)(HIMAGELIST);
+	typedef INT(WINAPI* PFNIMAGELIST_GETIMAGECOUNT)(HIMAGELIST);
+	typedef INT(WINAPI* PFNIMAGELIST_REPLACEICON)(HIMAGELIST, int, HICON);
+	
+	// Ole32
+	typedef HRESULT(WINAPI* PFNCOINITIALIZE)(LPVOID);
+	
 	PFNGETFILESIZEEX pGetFileSizeEx;
 	PFNSETFILEPOINTEREX pSetFilePointerEx;
 	PFNVERSETCONDITIONMASK pVerSetConditionMask;
@@ -93,6 +118,8 @@ namespace ri
 	PFNALPHABLEND pAlphaBlend;
 	PFNTRANSPARENTBLT pTransparentBlt;
 	PFNSHGETFOLDERPATH pSHGetFolderPath; // Points to the W version on UNICODE and the A version otherwise.
+	PFNSHGETFILEINFO pSHGetFileInfo; // Points to the W version on UNICODE and the A version otherwise.
+	PFNSHELL_NOTIFYICON pShell_NotifyIcon;
 	PFNPATHFILEEXISTS pPathFileExists;
 	PFNGETMENUINFO pGetMenuInfo;
 	PFNSETMENUINFO pSetMenuInfo;
@@ -106,6 +133,7 @@ namespace ri
 	PFNINITIALIZECRITICALSECTIONANDSPINCOUNT pInitializeCriticalSectionAndSpinCount;
 	PFNTRYENTERCRITICALSECTION pTryEnterCriticalSection;
 	PFNQUEUEUSERAPC pQueueUserAPC;
+	PFNGETVERSIONEX pGetVersionEx;
 	PFNCERTOPENSYSTEMSTOREA pCertOpenSystemStoreA;
 	PFNCERTCLOSESTORE pCertCloseStore;
 	PFNCERTFINDCERTIFICATEINSTORE pCertFindCertificateInStore;
@@ -118,6 +146,19 @@ namespace ri
 	PFNWSARECV pWSARecv;
 	PFNWSARECVFROM pWSARecvFrom;
 	PFNWSASOCKETA pWSASocketA;
+	PFNCOINITIALIZE pCoInitialize;
+	PFNIMAGELIST_CREATE pImageList_Create;
+	PFNIMAGELIST_ADD pImageList_Add;
+	PFNIMAGELIST_DESTROY pImageList_Destroy;
+	PFNIMAGELIST_GETIMAGECOUNT pImageList_GetImageCount;
+	PFNIMAGELIST_REPLACEICON pImageList_ReplaceIcon;
+	PFNCREATEDIBSECTION pCreateDIBSection;
+	PFNDRAWEDGE pDrawEdge;
+	PFNDRAWICONEX pDrawIconEx;
+	PFNGETSCROLLINFO pGetScrollInfo;
+	PFNSETSCROLLINFO pSetScrollInfo;
+	PFNGETSYSCOLORBRUSH pGetSysColorBrush;
+	PFNLOADIMAGE pLoadImage;
 }
 // namespace ri
 
@@ -132,6 +173,8 @@ void ri::InitReimplementation()
 	hLibShlwapi  = LoadLibrary(TEXT("shlwapi.dll"));
 	hLibCrypt32  = LoadLibrary(TEXT("crypt32.dll"));
 	hLibWs2_32   = LoadLibrary(TEXT("ws2_32.dll"));
+	hLibOle32    = LoadLibrary(TEXT("ole32.dll"));
+	hLibComCtl32 = LoadLibrary(TEXT("comctl32.dll"));
 
 	if (hLibKernel32)
 	{
@@ -143,6 +186,7 @@ void ri::InitReimplementation()
 		pVerifyVersionInfo = (PFNVERIFYVERSIONINFO)GetProcAddress(hLibKernel32, "VerifyVersionInfo" UNIVER);
 		pInitializeCriticalSectionAndSpinCount = (PFNINITIALIZECRITICALSECTIONANDSPINCOUNT)GetProcAddress(hLibKernel32, "InitializeCriticalSectionAndSpinCount");
 		pTryEnterCriticalSection = (PFNTRYENTERCRITICALSECTION)GetProcAddress(hLibKernel32, "TryEnterCriticalSection");
+		pGetVersionEx = (PFNGETVERSIONEX)GetProcAddress(hLibKernel32, "GetVersionEx" UNIVER);
 		pQueueUserAPC = (PFNQUEUEUSERAPC)GetProcAddress(hLibKernel32, "QueueUserAPC");
 	}
 
@@ -155,12 +199,19 @@ void ri::InitReimplementation()
 		pMonitorFromPoint = (PFNMONITORFROMPOINT)GetProcAddress(hLibUser32, "MonitorFromPoint");
 		pAnimateWindow = (PFNANIMATEWINDOW)GetProcAddress(hLibUser32, "AnimateWindow");
 		pTrackMouseEvent = (PFNTRACKMOUSEEVENT)GetProcAddress(hLibUser32, "TrackMouseEvent");
+		pDrawEdge = (PFNDRAWEDGE)GetProcAddress(hLibUser32, "DrawEdge");
+		pDrawIconEx = (PFNDRAWICONEX)GetProcAddress(hLibUser32, "DrawIconEx");
+		pGetScrollInfo = (PFNGETSCROLLINFO)GetProcAddress(hLibUser32, "GetScrollInfo");
+		pSetScrollInfo = (PFNSETSCROLLINFO)GetProcAddress(hLibUser32, "SetScrollInfo");
+		pGetSysColorBrush = (PFNGETSYSCOLORBRUSH)GetProcAddress(hLibUser32, "GetSysColorBrush");
+		pLoadImage = (PFNLOADIMAGE)GetProcAddress(hLibUser32, "LoadImage" UNIVER);
 	}
 
 	if (hLibGdi32)
 	{
 		pSetDCBrushColor = (PFNSETDCBRUSHCOLOR)GetProcAddress(hLibGdi32, "SetDCBrushColor");
 		pSetDCPenColor = (PFNSETDCPENCOLOR)GetProcAddress(hLibGdi32, "SetDCPenColor");
+		pCreateDIBSection = (PFNCREATEDIBSECTION)GetProcAddress(hLibGdi32, "CreateDIBSection");
 	}
 
 	if (hLibMsimg32)
@@ -173,6 +224,8 @@ void ri::InitReimplementation()
 	if (hLibShell32)
 	{
 		pSHGetFolderPath = (PFNSHGETFOLDERPATH)GetProcAddress(hLibShell32, "SHGetFolderPath" UNIVER);
+		pSHGetFileInfo = (PFNSHGETFILEINFO)GetProcAddress(hLibShell32, "SHGetFileInfo" UNIVER);
+		pShell_NotifyIcon = (PFNSHELL_NOTIFYICON)GetProcAddress(hLibShell32, "Shell_NotifyIcon" UNIVER);
 	}
 
 	if (hLibShlwapi)
@@ -199,14 +252,28 @@ void ri::InitReimplementation()
 		pWSARecvFrom         = (PFNWSARECVFROM)         GetProcAddress(hLibWs2_32, "WSARecvFrom");
 		pWSASocketA          = (PFNWSASOCKETA)          GetProcAddress(hLibWs2_32, "WSASocketA");
 	}
+	
+	if (hLibOle32)
+	{
+		pCoInitialize = (PFNCOINITIALIZE) GetProcAddress(hLibOle32, "CoInitialize");
+	}
 
+	if (hLibComCtl32)
+	{
+		pImageList_Add           = (PFNIMAGELIST_ADD)          GetProcAddress(hLibComCtl32, "ImageList_Add");
+		pImageList_Create        = (PFNIMAGELIST_CREATE)       GetProcAddress(hLibComCtl32, "ImageList_Create");
+		pImageList_Destroy       = (PFNIMAGELIST_DESTROY)      GetProcAddress(hLibComCtl32, "ImageList_Destroy");
+		pImageList_GetImageCount = (PFNIMAGELIST_GETIMAGECOUNT)GetProcAddress(hLibComCtl32, "ImageList_GetImageCount");
+		pImageList_ReplaceIcon   = (PFNIMAGELIST_REPLACEICON)  GetProcAddress(hLibComCtl32, "ImageList_ReplaceIcon");
+	}
+	
 	// Test if atomic instructions are supported
 	s_bSupportsAtomics = true;
 
 	// If we are Windows NT and our version >= 4, then atomics should be used.
 	OSVERSIONINFO ovi{};
 	ovi.dwOSVersionInfoSize = sizeof ovi;
-	GetVersionEx(&ovi);
+	ri::GetVersionEx(&ovi);
 
 	if (ovi.dwMajorVersion < 4 || ovi.dwPlatformId != VER_PLATFORM_WIN32_NT)
 	{
@@ -323,7 +390,7 @@ BOOL ri::VerifyVersionInfo(LPOSVERSIONINFOEX pVersionInfo, DWORD typeMask, DWORD
 	OSVERSIONINFO ver{};
 	ver.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
 
-	if (!GetVersionEx(&ver))
+	if (!ri::GetVersionEx(&ver))
 		return FALSE;
 
 	if (typeMask & VER_MINORVERSION)
@@ -439,6 +506,24 @@ HRESULT ri::SHGetFolderPath(HWND hwnd, int csidl, HANDLE hndl, DWORD dwf, LPTSTR
 	// TODO: For now, just "."
 	_tcscpy(szp, TEXT("."));
 	return S_OK;
+}
+
+DWORD_PTR ri::SHGetFileInfo(LPCTSTR pszPath, DWORD dwFileAttributes, SHFILEINFO* psfi, UINT cbFileInfo, UINT uFlags)
+{
+	if (pSHGetFileInfo)
+		return pSHGetFileInfo(pszPath, dwFileAttributes, psfi, cbFileInfo, uFlags);
+
+	psfi->hIcon = 0;
+	return 0;
+}
+
+BOOL ri::Shell_NotifyIcon(DWORD dwMessage, NOTIFYICONDATA* nid)
+{
+	if (pShell_NotifyIcon)
+		return pShell_NotifyIcon(dwMessage, nid);
+
+	// Just do nothing.
+	return 0;
 }
 
 BOOL ri::PathFileExists(LPCTSTR pszPath)
@@ -599,6 +684,26 @@ DWORD ri::QueueUserAPC(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData)
 
 }
 
+BOOL ri::GetVersionEx(LPOSVERSIONINFO lpvi)
+{
+	if (pGetVersionEx)
+		return pGetVersionEx(lpvi);
+
+	DWORD oldsize = lpvi->dwOSVersionInfoSize;
+	memset(lpvi, 0, sizeof * lpvi);
+
+	DWORD ver = GetVersion();
+	lpvi->dwOSVersionInfoSize = oldsize;
+	lpvi->dwMajorVersion = LOBYTE(ver);
+	lpvi->dwMinorVersion = HIBYTE(LOWORD(ver));
+	lpvi->dwBuildNumber = HIWORD(ver);
+	// TODO: detect NT
+	lpvi->dwPlatformId = VER_PLATFORM_WIN32_WINDOWS;
+
+	_tcscpy(lpvi->szCSDVersion, TEXT("Unknown Windows"));
+	return TRUE;
+}
+
 BOOL ri::TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection)
 {
 	if (pTryEnterCriticalSection)
@@ -616,6 +721,74 @@ BOOL ri::TrackMouseEvent(LPTRACKMOUSEEVENT lptme)
 
 	// TODO?
 	return FALSE;
+}
+
+BOOL ri::DrawEdge(HDC hdc, LPRECT rect, UINT edge, UINT grfFlags)
+{
+	if (pDrawEdge)
+		return pDrawEdge(hdc, rect, edge, grfFlags);
+
+	// TODO
+	return 0;
+}
+
+BOOL ri::DrawIconEx(HDC hdc, int x, int y, HICON hicon, int cx, int cy, UINT isiac, HBRUSH hbrffd, UINT dif)
+{
+	if (pDrawIconEx)
+		return pDrawIconEx(hdc, x, y, hicon, cx, cy, isiac, hbrffd, dif);
+
+	// TODO
+	return FALSE;
+}
+
+BOOL ri::GetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO scrollInfo)
+{
+	if (pGetScrollInfo)
+		return pGetScrollInfo(hwnd, nBar, scrollInfo);
+
+	// TODO: Emulate
+	return 0;
+}
+
+BOOL ri::SetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO scrollInfo, BOOL redraw)
+{
+	if (pSetScrollInfo)
+		return pSetScrollInfo(hwnd, nBar, scrollInfo, redraw);
+
+	// TODO: Emulate
+	return 0;
+}
+
+HBRUSH ri::GetSysColorBrush(int type)
+{
+	if (pGetSysColorBrush)
+		return pGetSysColorBrush(type);
+
+	// TODO
+	switch (type)
+	{
+		case COLOR_ACTIVEBORDER:
+		case COLOR_INACTIVEBORDER:
+		case COLOR_ACTIVECAPTION:
+		case COLOR_INACTIVECAPTION:
+		case COLOR_GRADIENTACTIVECAPTION:
+		case COLOR_GRADIENTINACTIVECAPTION:
+		case COLOR_GRAYTEXT:
+		default:
+			return (HBRUSH) GetStockObject(BLACK_BRUSH);
+
+		case COLOR_CAPTIONTEXT:
+			return (HBRUSH)GetStockObject(WHITE_BRUSH);
+	}
+}
+
+HBITMAP ri::LoadImage(HINSTANCE hInst, LPCTSTR name, UINT type, int cx, int cy, UINT fuLoad)
+{
+	if (pLoadImage)
+		return pLoadImage(hInst, name, type, cx, cy, fuLoad);
+
+	// TODO
+	return NULL;
 }
 
 #ifndef EAFNOSUPPORT
@@ -949,6 +1122,15 @@ COLORREF ri::SetDCPenColor(HDC hdc, COLORREF color)
 	return oldColor;
 }
 
+HBITMAP ri::CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, VOID** ppvBits, HANDLE hSection, DWORD offset)
+{
+	if (pCreateDIBSection)
+		return pCreateDIBSection(hdc, pbmi, usage, ppvBits, hSection, offset);
+	
+	// just don't create it
+	return NULL;
+}
+
 HBRUSH ri::GetDCBrush()
 {
 	if (pSetDCBrushColor)
@@ -1036,4 +1218,53 @@ PCCERT_CONTEXT ri::CertEnumCertificatesInStore(HCERTSTORE hs, PCCERT_CONTEXT pcc
 		return pCertEnumCertificatesInStore(hs, pcc);
 
 	return NULL;
+}
+
+HRESULT ri::CoInitialize(LPVOID Reserved)
+{
+	if (pCoInitialize)
+		return pCoInitialize(Reserved);
+	
+	return 0;
+}
+
+HIMAGELIST ri::ImageList_Create(int cx, int cy, UINT flags, int cInitial, int cGrow)
+{
+	if (pImageList_Create)
+		return pImageList_Create(cx, cy, flags, cInitial, cGrow);
+
+	// Don't create it.
+	return (HIMAGELIST) 0xCAFEBABE;
+}
+
+BOOL ri::ImageList_Destroy(HIMAGELIST himl)
+{
+	if (pImageList_Destroy)
+		return pImageList_Destroy(himl);
+
+	return 0;
+}
+
+BOOL ri::ImageList_Add(HIMAGELIST himl, HBITMAP hbmImage, HBITMAP hbmMask)
+{
+	if (pImageList_Add)
+		return pImageList_Add(himl, hbmImage, hbmMask);
+
+	return 0;
+}
+
+int ri::ImageList_GetImageCount(HIMAGELIST himl)
+{
+	if (pImageList_GetImageCount)
+		return pImageList_GetImageCount(himl);
+
+	return 0;
+}
+
+int ri::ImageList_ReplaceIcon(HIMAGELIST himl, int i, HICON hicon)
+{
+	if (pImageList_ReplaceIcon)
+		return pImageList_ReplaceIcon(himl, i, hicon);
+
+	return 0;
 }
