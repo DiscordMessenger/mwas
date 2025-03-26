@@ -104,6 +104,7 @@ namespace ri
 	typedef BOOL(WINAPI* PFNIMAGELIST_DESTROY)(HIMAGELIST);
 	typedef INT(WINAPI* PFNIMAGELIST_GETIMAGECOUNT)(HIMAGELIST);
 	typedef INT(WINAPI* PFNIMAGELIST_REPLACEICON)(HIMAGELIST, int, HICON);
+	typedef HWND(WINAPI* PFNCREATESTATUSWINDOWA)(LONG, LPCSTR, HWND, UINT);
 	
 	// Ole32
 	typedef HRESULT(WINAPI* PFNCOINITIALIZE)(LPVOID);
@@ -152,6 +153,7 @@ namespace ri
 	PFNIMAGELIST_DESTROY pImageList_Destroy;
 	PFNIMAGELIST_GETIMAGECOUNT pImageList_GetImageCount;
 	PFNIMAGELIST_REPLACEICON pImageList_ReplaceIcon;
+	PFNCREATESTATUSWINDOWA pCreateStatusWindowA;
 	PFNCREATEDIBSECTION pCreateDIBSection;
 	PFNDRAWEDGE pDrawEdge;
 	PFNDRAWICONEX pDrawIconEx;
@@ -265,6 +267,11 @@ void ri::InitReimplementation()
 		pImageList_Destroy       = (PFNIMAGELIST_DESTROY)      GetProcAddress(hLibComCtl32, "ImageList_Destroy");
 		pImageList_GetImageCount = (PFNIMAGELIST_GETIMAGECOUNT)GetProcAddress(hLibComCtl32, "ImageList_GetImageCount");
 		pImageList_ReplaceIcon   = (PFNIMAGELIST_REPLACEICON)  GetProcAddress(hLibComCtl32, "ImageList_ReplaceIcon");
+
+		pCreateStatusWindowA = (PFNCREATESTATUSWINDOWA) GetProcAddress(hLibComCtl32, "CreateStatusWindowA");
+		if (!pCreateStatusWindowA)
+			// Windows NT 3.1's comctl32.dll exports just CreateStatusWindow, which takes ANSI text. Use that instead.
+			pCreateStatusWindowA = (PFNCREATESTATUSWINDOWA) GetProcAddress(hLibComCtl32, "CreateStatusWindow");
 	}
 	
 	// Test if atomic instructions are supported
@@ -728,8 +735,11 @@ BOOL ri::DrawEdge(HDC hdc, LPRECT rect, UINT edge, UINT grfFlags)
 	if (pDrawEdge)
 		return pDrawEdge(hdc, rect, edge, grfFlags);
 
-	// TODO
-	return 0;
+	// TODO: emulate "properly"
+	HGDIOBJ hgdiobj = SelectObject(hdc, GetStockObject(BLACK_BRUSH));
+	Rectangle(hdc, rect->left, rect->top, rect->right, rect->bottom);
+	SelectObject(hdc, hgdiobj);
+	return TRUE;
 }
 
 BOOL ri::DrawIconEx(HDC hdc, int x, int y, HICON hicon, int cx, int cy, UINT isiac, HBRUSH hbrffd, UINT dif)
@@ -737,8 +747,8 @@ BOOL ri::DrawIconEx(HDC hdc, int x, int y, HICON hicon, int cx, int cy, UINT isi
 	if (pDrawIconEx)
 		return pDrawIconEx(hdc, x, y, hicon, cx, cy, isiac, hbrffd, dif);
 
-	// TODO
-	return FALSE;
+	// TODO: emulate it properly?
+	return DrawIcon(hdc, x, y, hicon);
 }
 
 BOOL ri::GetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO scrollInfo)
@@ -746,7 +756,15 @@ BOOL ri::GetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO scrollInfo)
 	if (pGetScrollInfo)
 		return pGetScrollInfo(hwnd, nBar, scrollInfo);
 
-	// TODO: Emulate
+	if (scrollInfo->fMask & SIF_POS)
+		scrollInfo->nPos = GetScrollPos(hwnd, nBar);
+	
+	if (scrollInfo->fMask & SIF_RANGE)
+		GetScrollRange(hwnd, nBar, &scrollInfo->nMin, &scrollInfo->nMax);
+
+	if (scrollInfo->fMask & SIF_PAGE)
+		scrollInfo->nPage = 0;
+
 	return 0;
 }
 
@@ -755,7 +773,18 @@ BOOL ri::SetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO scrollInfo, BOOL redraw
 	if (pSetScrollInfo)
 		return pSetScrollInfo(hwnd, nBar, scrollInfo, redraw);
 
-	// TODO: Emulate
+	if (scrollInfo->fMask & SIF_POS)
+		SetScrollPos(hwnd, nBar, scrollInfo->nPos, redraw);
+	
+	if (scrollInfo->fMask & SIF_RANGE)
+	{
+		int max = scrollInfo->nMax;
+		if (scrollInfo->fMask & SIF_PAGE)
+			max -= scrollInfo->nPage;
+
+		SetScrollRange(hwnd, nBar, scrollInfo->nMin, max, redraw);
+	}
+
 	return 0;
 }
 
@@ -764,22 +793,15 @@ HBRUSH ri::GetSysColorBrush(int type)
 	if (pGetSysColorBrush)
 		return pGetSysColorBrush(type);
 
-	// TODO
-	switch (type)
-	{
-		case COLOR_ACTIVEBORDER:
-		case COLOR_INACTIVEBORDER:
-		case COLOR_ACTIVECAPTION:
-		case COLOR_INACTIVECAPTION:
-		case COLOR_GRADIENTACTIVECAPTION:
-		case COLOR_GRADIENTINACTIVECAPTION:
-		case COLOR_GRAYTEXT:
-		default:
-			return (HBRUSH) GetStockObject(BLACK_BRUSH);
+	static HBRUSH hBrushCache[40];
+	if (!hBrushCache[type])
+		hBrushCache[type] = CreateSolidBrush(GetSysColor(type));
 
-		case COLOR_CAPTIONTEXT:
-			return (HBRUSH)GetStockObject(WHITE_BRUSH);
-	}
+	if (!hBrushCache[type])
+		// I mean come on
+		hBrushCache[type] = (HBRUSH) GetStockObject(BLACK_BRUSH);
+
+	return hBrushCache[type];
 }
 
 HBITMAP ri::LoadImage(HINSTANCE hInst, LPCTSTR name, UINT type, int cx, int cy, UINT fuLoad)
@@ -1180,6 +1202,11 @@ int ri::GetWordEllipsisFlag()
 	return DT_WORD_ELLIPSIS;
 }
 
+bool ri::SupportsScrollInfo()
+{
+	return pGetScrollInfo && pSetScrollInfo;
+}
+
 HCERTSTORE ri::CertOpenSystemStoreA(HCRYPTPROV_LEGACY hProv, LPCSTR szSubSystemProtocol)
 {
 	if (pCertOpenSystemStoreA)
@@ -1267,4 +1294,12 @@ int ri::ImageList_ReplaceIcon(HIMAGELIST himl, int i, HICON hicon)
 		return pImageList_ReplaceIcon(himl, i, hicon);
 
 	return 0;
+}
+
+HWND ri::CreateStatusWindowANSI(LONG style, LPCSTR text, HWND hwnd, UINT cid)
+{
+	if (pCreateStatusWindowA)
+		return pCreateStatusWindowA(style, text, hwnd, cid);
+
+	return NULL;
 }

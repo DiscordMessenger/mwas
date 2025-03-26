@@ -184,6 +184,7 @@ namespace ri
 	// break if they were set on earlier versions of Windows
 	int GetHalfToneStretchMode();
 	int GetWordEllipsisFlag();
+	bool SupportsScrollInfo();
 	
 	// Ole32
 	HRESULT CoInitialize(LPVOID lpv);
@@ -194,5 +195,6 @@ namespace ri
 	BOOL ImageList_Add(HIMAGELIST himl, HBITMAP hbmImage, HBITMAP hbmMask);
 	int ImageList_GetImageCount(HIMAGELIST himl);
 	int ImageList_ReplaceIcon(HIMAGELIST himl, int i, HICON hicon);
+	HWND CreateStatusWindowANSI(LONG style, LPCSTR text, HWND hwnd, UINT cid);
 }
 // namespace ri
