@@ -12,6 +12,8 @@
 #include <commctrl.h>
 #include <shellapi.h>
 
+#include <map>
+
 #ifdef UNICODE
 #define UNIVER "W"
 #else
@@ -730,15 +732,144 @@ BOOL ri::TrackMouseEvent(LPTRACKMOUSEEVENT lptme)
 	return FALSE;
 }
 
-BOOL ri::DrawEdge(HDC hdc, LPRECT rect, UINT edge, UINT grfFlags)
+#define DRE_BLACKOUTER  0x80000000
+#define DRE_HOT         0x40000000
+BOOL ri::DrawEdge(HDC hdc, LPRECT lprect, UINT style, UINT grfFlags)
 {
 	if (pDrawEdge)
-		return pDrawEdge(hdc, rect, edge, grfFlags);
+		return pDrawEdge(hdc, lprect, style, grfFlags);
 
-	// TODO: emulate "properly"
-	HGDIOBJ hgdiobj = SelectObject(hdc, GetStockObject(BLACK_BRUSH));
-	Rectangle(hdc, rect->left, rect->top, rect->right, rect->bottom);
-	SelectObject(hdc, hgdiobj);
+	RECT rect = *lprect;
+
+	// copied from NanoShell, which kinda recreated Windows
+	if (grfFlags & BF_FLAT)
+	{
+		grfFlags &= ~BF_FLAT;
+		style &= ~(BDR_INNER | BDR_OUTER);
+		style |=  DRE_BLACKOUTER;
+	}
+	
+	// the depth levels are as follows:
+	// 6 - BUTTON_HILITE_COLOR
+	// 5 - Avg(BUTTON_HILITE_COLOR, BUTTON_MIDDLE_COLOR)
+	// 4 - BUTTON_MIDDLE_COLOR
+	// 3 - WINDOW_BORDER_COLOR
+	// 2 - BUTTON_SHADOW_COLOR
+	// 1 - BUTTON_XSHADOW_COLOR
+	// 0 - BUTTON_EDGE_COLOR
+	
+	uint32_t tl = 0, br = 0;
+	
+	// the flags we need to check, in order of priority.
+	// These match up with their definitions in window.h and represent the amount 1 is shifted by.
+	static const int flags[] = { 4, 3, 1, 2, 0 };
+	
+	int colors[] =
+	{
+		0, //BUTTON_EDGE_COLOR,
+		0, //BUTTON_XSHADOW_COLOR,
+		0, //BUTTON_SHADOW_COLOR,
+		0, //WINDOW_BORDER_COLOR,
+		0, //0,
+		0, //0,
+		0, //BUTTON_HILITE_COLOR,
+	};
+
+	colors[0] = GetSysColor(COLOR_WINDOWFRAME);
+	colors[1] = GetSysColor(COLOR_3DDKSHADOW);
+	colors[2] = GetSysColor(COLOR_3DSHADOW);
+	colors[3] = GetSysColor(COLOR_ACTIVEBORDER);
+	colors[6] = GetSysColor(COLOR_3DHILIGHT);
+	
+	if ((style & DRE_BLACKOUTER) && colors[1] == 0)
+		colors[1] = colors[2];
+	
+	if (style & DRE_HOT)
+		colors[4] = GetSysColor(COLOR_3DLIGHT);
+	else
+		colors[4] = GetSysColor(COLOR_3DFACE);
+	
+	// get color #5.
+	unsigned colorAvg = 0;
+	colorAvg |= ((colors[6] & 0xff0000) + (colors[4] & 0xff0000)) >> 1;
+	colorAvg |= ((colors[6] & 0x00ff00) + (colors[4] & 0x00ff00)) >> 1;
+	colorAvg |= ((colors[6] & 0x0000ff) + (colors[4] & 0x0000ff)) >> 1;
+	colors[5] = colorAvg;
+	
+	// 4 pairs of ints corresponding to the border type. These ints are
+	// indices into the colors array.
+	static const int color_indices[] =
+	{
+		6, 2, // raised inner
+		1, 2, // sunken inner
+		5, 1, // raised outer
+		2, 6,
+		0, 0,
+	};
+
+#define ARRAY_COUNT(x) (sizeof(x)/sizeof((x)[0]))
+	for (int i = 0; i < (int)ARRAY_COUNT(flags); i++)
+	{
+		if (~style & (1 << flags[i])) continue;
+		
+		tl = colors[color_indices[0 + 2 * flags[i]]];
+		br = colors[color_indices[1 + 2 * flags[i]]];
+		
+		// top left
+		HPEN hp = CreatePen(PS_SOLID, 1, tl);
+		HGDIOBJ go = SelectObject(hdc, hp);
+		POINT ptold;
+		
+		//VidDrawHLine(tl, rect.left, rect.right, rect.top);
+		MoveToEx(hdc, rect.left, rect.top, &ptold);
+		if (grfFlags & BF_TOP) {
+			LineTo(hdc, rect.right, rect.top);
+		}
+
+		//VidDrawVLine(tl, rect.top, rect.bottom, rect.left);
+		if (grfFlags & BF_LEFT) {
+			MoveToEx(hdc, rect.left, rect.top, NULL);
+			LineTo(hdc, rect.left, rect.bottom);
+		}
+
+		SelectObject(hdc, go);
+		DeleteObject(hp);
+
+		// bottom right
+		hp = CreatePen(PS_SOLID, 1, br);
+		go = SelectObject(hdc, hp);
+		
+		//VidDrawHLine(br, rect.left, rect.right, rect.bottom);
+		if (grfFlags & BF_BOTTOM) {
+			MoveToEx(hdc, rect.left, rect.bottom - 1, NULL);
+			LineTo(hdc, rect.right, rect.bottom - 1);
+		}
+
+		//VidDrawVLine(br, rect.top, rect.bottom, rect.right);
+		if (grfFlags & BF_RIGHT) {
+			MoveToEx(hdc, rect.right - 1, rect.top, NULL);
+			LineTo(hdc, rect.right - 1, rect.bottom);
+		}
+
+		SelectObject(hdc, go);
+		DeleteObject(hp);
+		MoveToEx(hdc, ptold.x, ptold.y, NULL);
+		
+		rect.left++;
+		rect.top++;
+		rect.right--;
+		rect.bottom--;
+	}
+	
+	if (grfFlags & BF_MIDDLE)
+		//VidFillRectangle(bg, rect);
+		FillRect(hdc, &rect, GetSysColorBrush(COLOR_3DFACE));
+
+	if (grfFlags & BF_ADJUST)
+		*lprect = rect;
+
+#undef ARRAY_COUNT
+
 	return TRUE;
 }
 
@@ -751,39 +882,156 @@ BOOL ri::DrawIconEx(HDC hdc, int x, int y, HICON hicon, int cx, int cy, UINT isi
 	return DrawIcon(hdc, x, y, hicon);
 }
 
+namespace ri
+{
+	struct HWndAndBar {
+		HWND hwnd;
+		int bar;
+
+		bool operator<(const HWndAndBar& oth) const {
+			if (hwnd != oth.hwnd)
+				return hwnd < oth.hwnd;
+
+			return bar < oth.bar;
+		}
+	};
+
+	std::map<HWndAndBar, SCROLLINFO> m_scrollInfo;
+
+	HWndAndBar HB(HWND hwnd, int bar) {
+		return { hwnd, bar };
+	}
+}
+
 BOOL ri::GetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO scrollInfo)
 {
 	if (pGetScrollInfo)
 		return pGetScrollInfo(hwnd, nBar, scrollInfo);
 
+	SCROLLINFO& psi = m_scrollInfo[HB(hwnd, nBar)];
+
 	if (scrollInfo->fMask & SIF_POS)
-		scrollInfo->nPos = GetScrollPos(hwnd, nBar);
+		scrollInfo->nPos = psi.nPos = GetScrollPos(hwnd, nBar);
+
+	if (scrollInfo->fMask & SIF_TRACKPOS)
+		scrollInfo->nTrackPos = psi.nTrackPos;
 	
 	if (scrollInfo->fMask & SIF_RANGE)
-		GetScrollRange(hwnd, nBar, &scrollInfo->nMin, &scrollInfo->nMax);
+		scrollInfo->nMin = psi.nMin, scrollInfo->nMax = psi.nMax;
 
 	if (scrollInfo->fMask & SIF_PAGE)
-		scrollInfo->nPage = 0;
+		scrollInfo->nPage = psi.nPage;
 
 	return 0;
 }
 
-BOOL ri::SetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO scrollInfo, BOOL redraw)
+BOOL ri::SetScrollInfo(HWND hwnd, int nBar, LPSCROLLINFO lpsi, BOOL redraw)
 {
 	if (pSetScrollInfo)
-		return pSetScrollInfo(hwnd, nBar, scrollInfo, redraw);
+		return pSetScrollInfo(hwnd, nBar, lpsi, redraw);
 
-	if (scrollInfo->fMask & SIF_POS)
-		SetScrollPos(hwnd, nBar, scrollInfo->nPos, redraw);
-	
-	if (scrollInfo->fMask & SIF_RANGE)
+	SCROLLINFO* Info = &m_scrollInfo[HB(hwnd, nBar)];
+
+	// NOTE: partly copied from ReactOS
+	BOOL bChangeParams = FALSE;
+	UINT MaxPage = 0;
+	int OldPos = 0;
+	int MaxPos = 0;
+
+	// Set the page size
+	if (lpsi->fMask & SIF_PAGE)
 	{
-		int max = scrollInfo->nMax;
-		if (scrollInfo->fMask & SIF_PAGE)
-			max -= scrollInfo->nPage;
+		if (Info->nPage != lpsi->nPage)
+		{
+			Info->nPage = lpsi->nPage;
+			bChangeParams = TRUE;
+		}
+	}
 
+	// Set the scroll pos
+	if (lpsi->fMask & SIF_POS)
+	{
+		OldPos = Info->nPos;
+		if (Info->nPos != lpsi->nPos)
+		{
+			Info->nPos = lpsi->nPos;
+		}
+	}
+
+	// Set the scroll range
+	if (lpsi->fMask & SIF_RANGE)
+	{
+		if (lpsi->nMin > lpsi->nMax)
+		{
+			Info->nMin = lpsi->nMin;
+			Info->nMax = lpsi->nMin;
+			bChangeParams = TRUE;
+		}
+		else if (Info->nMin != lpsi->nMin || Info->nMax != lpsi->nMax)
+		{
+			Info->nMin = lpsi->nMin;
+			Info->nMax = lpsi->nMax;
+			bChangeParams = TRUE;
+		}
+	}
+
+	// Make sure the page size is valid
+	MaxPage = abs(Info->nMax - Info->nMin) + 1;
+	if (Info->nPage > MaxPage)
+		Info->nPage = MaxPage;
+
+	// Make sure the pos is inside the range
+#define MAXIMUM(a, b) ((a) > (b) ? (a) : (b))
+	MaxPos = Info->nMax + 1 - (int)MAXIMUM(Info->nPage, 1);
+	if (Info->nPos < Info->nMin)
+		Info->nPos = Info->nMin;
+	else if (Info->nPos > MaxPos)
+		Info->nPos = MaxPos;
+#undef MAXIMUM
+
+	if (lpsi->fMask & SIF_RANGE)
+	{
+		// redraw only if redraw is set and SIF_POS isn't set
+		SetScrollRange(hwnd, nBar, Info->nMin, Info->nMax, redraw && (~lpsi->fMask & SIF_POS));
+	}
+
+	if (lpsi->fMask & SIF_POS)
+	{
+		SetScrollPos(hwnd, nBar, Info->nPos, redraw);
+	}
+
+
+	/*
+	if (scrollInfo->fMask & SIF_PAGE) {
+		psi.nPage = scrollInfo->nPage;
+	}
+
+	if (scrollInfo->fMask & SIF_RANGE) {
+		psi.nMin = scrollInfo->nMin;
+		psi.nMax = scrollInfo->nMax;
+
+		// calculate the actual range and set it
+		int max = psi.nMax - psi.nPage;
 		SetScrollRange(hwnd, nBar, scrollInfo->nMin, max, redraw);
 	}
+
+	if (scrollInfo->fMask & SIF_TRACKPOS) {
+		psi.nTrackPos = scrollInfo->nTrackPos;
+		if (psi.nTrackPos >= psi.nMax - psi.nPage)
+			psi.nTrackPos = psi.nMax - psi.nPage - 1;
+		if (psi.nTrackPos < psi.nMin)
+			psi.nTrackPos = psi.nMin;
+	}
+
+	if (scrollInfo->fMask & SIF_POS) {
+		psi.nPos = scrollInfo->nPos;
+		if (psi.nPos >= psi.nMax - psi.nPage)
+			psi.nPos = psi.nMax - psi.nPage - 1;
+		if (psi.nPos < psi.nMin)
+			psi.nPos = psi.nMin;
+
+		SetScrollPos(hwnd, nBar, scrollInfo->nPos, redraw);
+	}*/
 
 	return 0;
 }
