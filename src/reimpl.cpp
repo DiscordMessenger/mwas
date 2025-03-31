@@ -1394,11 +1394,40 @@ COLORREF ri::SetDCPenColor(HDC hdc, COLORREF color)
 
 HBITMAP ri::CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, VOID** ppvBits, HANDLE hSection, DWORD offset)
 {
-	if (pCreateDIBSection)
-		return pCreateDIBSection(hdc, pbmi, usage, ppvBits, hSection, offset);
+	//if (pCreateDIBSection)
+	//	return pCreateDIBSection(hdc, pbmi, usage, ppvBits, hSection, offset);
+
+	if (hSection) {
+		OutputDebugStringA("Unimplemented: Using a file section\n");
+	}
 	
-	// just don't create it
-	return NULL;
+	DWORD dwSize = pbmi->bmiHeader.biSizeImage;
+	if (dwSize == 0)
+	{
+		dwSize = pbmi->bmiHeader.biWidth * abs(pbmi->bmiHeader.biHeight) * (pbmi->bmiHeader.biBitCount / 8);
+		if (dwSize == 0)
+			return NULL;
+	}
+
+	*ppvBits = GlobalAlloc(GMEM_FIXED, dwSize);
+	if (!*ppvBits)
+		return NULL;
+
+	HBITMAP hbm = CreateDIBitmap(hdc, &pbmi->bmiHeader, CBM_INIT, ppvBits, pbmi, usage);
+	if (!hbm) {
+		GlobalFree(*ppvBits);
+		return NULL;
+	}
+
+	return hbm;
+}
+
+void ri::CommitDIBSection(HDC hdc, HBITMAP hbm, const BITMAPINFO* pbmi, VOID* pvBits)
+{
+	//if (pCreateDIBSection)
+	//	return;
+
+	SetDIBits(hdc, hbm, 0, abs(pbmi->bmiHeader.biHeight), pvBits, pbmi, DIB_RGB_COLORS);
 }
 
 HBRUSH ri::GetDCBrush()

@@ -174,6 +174,7 @@ namespace ri
 	COLORREF SetDCBrushColor(HDC hdc, COLORREF color);
 	COLORREF SetDCPenColor(HDC hdc, COLORREF color);
 	HBITMAP CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, VOID** ppvBits, HANDLE hSection, DWORD offset);
+	void CommitDIBSection(HDC hdc, HBITMAP hbm, const BITMAPINFO* pbmi, VOID* pvBits);
 	
 	// Not actually part of win32, but we have to do this instead
 	// of relying on GetStockBrush:
