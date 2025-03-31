@@ -1394,8 +1394,8 @@ COLORREF ri::SetDCPenColor(HDC hdc, COLORREF color)
 
 HBITMAP ri::CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, VOID** ppvBits, HANDLE hSection, DWORD offset)
 {
-	//if (pCreateDIBSection)
-	//	return pCreateDIBSection(hdc, pbmi, usage, ppvBits, hSection, offset);
+	if (pCreateDIBSection)
+		return pCreateDIBSection(hdc, pbmi, usage, ppvBits, hSection, offset);
 
 	if (hSection) {
 		OutputDebugStringA("Unimplemented: Using a file section\n");
@@ -1424,8 +1424,8 @@ HBITMAP ri::CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, VOID**
 
 void ri::CommitDIBSection(HDC hdc, HBITMAP hbm, const BITMAPINFO* pbmi, VOID* pvBits)
 {
-	//if (pCreateDIBSection)
-	//	return;
+	if (pCreateDIBSection)
+		return;
 
 	SetDIBits(hdc, hbm, 0, abs(pbmi->bmiHeader.biHeight), pvBits, pbmi, DIB_RGB_COLORS);
 }
