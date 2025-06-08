@@ -143,6 +143,7 @@ namespace ri
 	HANDLE CreateToolhelp32Snapshot(DWORD flags, DWORD pid);
 	BOOL Module32First(HANDLE snapshot, LPMODULEENTRY32 lpme);
 	BOOL Module32Next(HANDLE snapshot, LPMODULEENTRY32 lpme);
+	LPTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(LPTOP_LEVEL_EXCEPTION_FILTER filter);
 
 	// Msimg32
 	bool HaveMsImg();
