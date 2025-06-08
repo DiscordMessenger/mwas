@@ -24,9 +24,29 @@
 extern "C" int _CRT_MT;
 #endif
 
+#ifdef DISCORD_MESSENGER
+
+#define DMCDF_USER32   0x0001
+#define DMCDF_GDI32    0x0002
+#define DMCDF_SHELL32  0x0004
+#define DMCDF_MSIMG32  0x0008
+#define DMCDF_SHLWAPI  0x0010
+#define DMCDF_CRYPT32  0x0020
+#define DMCDF_WS2_32   0x0040
+#define DMCDF_OLE32    0x0080
+#define DMCDF_COMCTL32 0x0100
+#define DMCDF_ALL      0x01FF
+#define DMCDF_NODLGEX  0x0200
+#define DMCDF_NODRIEX  0x0400
+
+extern int GetCutDownFlags();
+
+#endif
+
 namespace ri
 {
 	static bool s_bSupportsAtomics = false;
+	static bool s_bUseChicagoDrawIconExSignature = false;
 
 	HMODULE hLibKernel32;
 	HMODULE hLibUser32;
@@ -79,6 +99,7 @@ namespace ri
 	typedef BOOL(WINAPI* PFNTRACKMOUSEEVENT)(LPTRACKMOUSEEVENT lpTME);
 	typedef BOOL(WINAPI* PFNDRAWEDGE)(HDC, LPRECT, UINT, UINT);
 	typedef BOOL(WINAPI* PFNDRAWICONEX)(HDC, int, int, HICON, int, int, UINT, HBRUSH, UINT);
+	typedef BOOL(WINAPI* PFNDRAWICONEX_CHICAGO)(HDC hdc, int x, int y, HICON hic, int cx, int cy, DWORD ropMask, DWORD ropImage, HBRUSH hbrSrc, UINT uFlags);
 	typedef BOOL(WINAPI* PFNGETSCROLLINFO)(HWND, int, LPSCROLLINFO);
 	typedef BOOL(WINAPI* PFNSETSCROLLINFO)(HWND, int, LPSCROLLINFO, BOOL);
 	typedef HBRUSH(WINAPI* PFNGETSYSCOLORBRUSH)(int);
@@ -168,6 +189,22 @@ namespace ri
 
 void ri::InitReimplementation()
 {
+#ifdef DISCORD_MESSENGER
+	int cdf = GetCutDownFlags();
+	if ((cdf & DMCDF_ALL) == DMCDF_ALL)
+		return;
+
+	hLibKernel32 = LoadLibrary(TEXT("kernel32.dll"));
+	if (~cdf & DMCDF_USER32)   hLibUser32 = LoadLibrary(TEXT("user32.dll"));
+	if (~cdf & DMCDF_GDI32)    hLibGdi32 = LoadLibrary(TEXT("gdi32.dll"));
+	if (~cdf & DMCDF_SHELL32)  hLibShell32 = LoadLibrary(TEXT("shell32.dll"));
+	if (~cdf & DMCDF_MSIMG32)  hLibMsimg32 = LoadLibrary(TEXT("msimg32.dll"));
+	if (~cdf & DMCDF_SHLWAPI)  hLibShlwapi = LoadLibrary(TEXT("shlwapi.dll"));
+	if (~cdf & DMCDF_CRYPT32)  hLibCrypt32 = LoadLibrary(TEXT("crypt32.dll"));
+	if (~cdf & DMCDF_WS2_32)   hLibWs2_32 = LoadLibrary(TEXT("ws2_32.dll"));
+	if (~cdf & DMCDF_OLE32)    hLibOle32 = LoadLibrary(TEXT("ole32.dll"));
+	if (~cdf & DMCDF_COMCTL32) hLibComCtl32 = LoadLibrary(TEXT("comctl32.dll"));
+#else
 	// Load all the libraries.
 	hLibKernel32 = LoadLibrary(TEXT("kernel32.dll"));
 	hLibUser32   = LoadLibrary(TEXT("user32.dll"));
@@ -179,6 +216,7 @@ void ri::InitReimplementation()
 	hLibWs2_32   = LoadLibrary(TEXT("ws2_32.dll"));
 	hLibOle32    = LoadLibrary(TEXT("ole32.dll"));
 	hLibComCtl32 = LoadLibrary(TEXT("comctl32.dll"));
+#endif
 
 	if (hLibKernel32)
 	{
@@ -209,6 +247,11 @@ void ri::InitReimplementation()
 		pSetScrollInfo = (PFNSETSCROLLINFO)GetProcAddress(hLibUser32, "SetScrollInfo");
 		pGetSysColorBrush = (PFNGETSYSCOLORBRUSH)GetProcAddress(hLibUser32, "GetSysColorBrush");
 		pLoadImage = (PFNLOADIMAGE)GetProcAddress(hLibUser32, "LoadImage" UNIVER);
+
+#ifdef DISCORD_MESSENGER
+		if (cdf & DMCDF_NODRIEX)
+			pDrawIconEx = NULL;
+#endif
 	}
 
 	if (hLibGdi32)
@@ -275,7 +318,7 @@ void ri::InitReimplementation()
 			// Windows NT 3.1's comctl32.dll exports just CreateStatusWindow, which takes ANSI text. Use that instead.
 			pCreateStatusWindowA = (PFNCREATESTATUSWINDOWA) GetProcAddress(hLibComCtl32, "CreateStatusWindow");
 	}
-	
+
 	// Test if atomic instructions are supported
 	s_bSupportsAtomics = true;
 
@@ -291,6 +334,20 @@ void ri::InitReimplementation()
 #ifdef MINGW_SPECIFIC_HACKS
 		_CRT_MT = 0;
 #endif
+	}
+
+	if (ovi.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS &&
+		ovi.dwMajorVersion == 4 &&
+		ovi.dwMinorVersion == 0 &&
+		LOWORD(ovi.dwBuildNumber) < 200 &&
+		pDrawIconEx)
+	{
+		// Early Windows Chicago builds.
+		MessageBoxA(NULL, "Using old DrawIconEx signature and disabling Get/SetScrollInfo because they aren't working.", "MWAS", 0);
+
+		s_bUseChicagoDrawIconExSignature = true;
+		pGetScrollInfo = nullptr;
+		pSetScrollInfo = nullptr;
 	}
 }
 
@@ -876,7 +933,16 @@ BOOL ri::DrawEdge(HDC hdc, LPRECT lprect, UINT style, UINT grfFlags)
 BOOL ri::DrawIconEx(HDC hdc, int x, int y, HICON hicon, int cx, int cy, UINT isiac, HBRUSH hbrffd, UINT dif)
 {
 	if (pDrawIconEx)
+	{
+		if (s_bUseChicagoDrawIconExSignature)
+		{
+			PFNDRAWICONEX_CHICAGO pDrawIconExC = (PFNDRAWICONEX_CHICAGO) pDrawIconEx;
+
+			return pDrawIconExC(hdc, x, y, hicon, cx, cy, SRCCOPY, SRCCOPY, NULL, dif & DI_NORMAL);
+		}
+
 		return pDrawIconEx(hdc, x, y, hicon, cx, cy, isiac, hbrffd, dif);
+	}
 
 	// TODO: emulate it properly?
 	return DrawIcon(hdc, x, y, hicon);
@@ -1112,12 +1178,12 @@ INT ri::WSAAddressToStringA(LPSOCKADDR address, DWORD addressLength, LPWSAPROTOC
 	{
 		strncpy(addressString, inet_ntoa(addrIn->sin_addr), *addressStringLength);
 		addressString[*addressStringLength - 1] = 0;
-		*addressStringLength = strlen(addressString);
+		*addressStringLength = (int) strlen(addressString);
 	}
 	else
 	{
 		strcpy(addressString, inet_ntoa(addrIn->sin_addr));
-		*addressStringLength = strlen(addressString);
+		*addressStringLength = (int) strlen(addressString);
 	}
 
 	return 0;
@@ -1538,7 +1604,7 @@ HIMAGELIST ri::ImageList_Create(int cx, int cy, UINT flags, int cInitial, int cG
 		return pImageList_Create(cx, cy, flags, cInitial, cGrow);
 
 	// Don't create it.
-	return (HIMAGELIST) 0xCAFEBABE;
+	return (HIMAGELIST) (uintptr_t) 0xCAFEBABE;
 }
 
 BOOL ri::ImageList_Destroy(HIMAGELIST himl)
