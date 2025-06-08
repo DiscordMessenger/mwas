@@ -2,6 +2,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <tlhelp32.h>
 
 // This part of the DiscordMessenger project is designed to reimplement APIs missing
 // in earlier versions of Windows, such as Windows NT 4.  It's basically like a polyfill.
@@ -139,6 +140,9 @@ namespace ri
 	LONG InterlockedExchangeAdd(LONG* Addend, LONG Value);
 	DWORD QueueUserAPC(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData);
 	BOOL GetVersionEx(LPOSVERSIONINFO lpVersionInformation);
+	HANDLE CreateToolhelp32Snapshot(DWORD flags, DWORD pid);
+	BOOL Module32First(HANDLE snapshot, LPMODULEENTRY32 lpme);
+	BOOL Module32Next(HANDLE snapshot, LPMODULEENTRY32 lpme);
 
 	// Msimg32
 	bool HaveMsImg();
@@ -156,6 +160,7 @@ namespace ri
 	BOOL PathFileExists(LPCTSTR pszPath);
 
 	// User32
+	BOOL SetProcessDPIAware();
 	BOOL AnimateWindow(HWND hWnd, DWORD time, DWORD flags);
 	BOOL GetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	BOOL SetMenuInfo(HMENU hMenu, LPMENUINFO lpMenuInfo);

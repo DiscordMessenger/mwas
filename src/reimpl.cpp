@@ -16,8 +16,10 @@
 
 #ifdef UNICODE
 #define UNIVER "W"
+#define UNIVER2 "W"
 #else
 #define UNIVER "A"
+#define UNIVER2
 #endif
 
 #ifdef MINGW_SPECIFIC_HACKS
@@ -70,6 +72,9 @@ namespace ri
 	typedef BOOL(WINAPI* PFNTRYENTERCRITICALSECTION)(LPCRITICAL_SECTION lpCriticalSection);
 	typedef BOOL(WINAPI* PFNGETVERSIONEX)(OSVERSIONINFO*);
 	typedef DWORD(WINAPI* PFNQUEUEUSERAPC)(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData);
+	typedef HANDLE(WINAPI* PFNCREATETOOLHELP32SNAPSHOT)(DWORD, DWORD);
+	typedef BOOL(WINAPI* PFNMODULE32FIRST)(HANDLE, LPMODULEENTRY32);
+	typedef BOOL(WINAPI* PFNMODULE32NEXT)(HANDLE, LPMODULEENTRY32);
 
 	// MsImg32
 	typedef BOOL(WINAPI* PFNGRADIENTFILL)(HDC hdc, PTRIVERTEX trivertex, ULONG nvertex, PVOID pmesh, ULONG nmesh, ULONG ulmode);
@@ -90,6 +95,7 @@ namespace ri
 	typedef HBITMAP(WINAPI* PFNCREATEDIBSECTION)(HDC hdc, const BITMAPINFO*, UINT, VOID**, HANDLE, DWORD);
 
 	// User32
+	typedef BOOL(WINAPI* PFNSETPROCESSDPIAWARE)(VOID);
 	typedef BOOL(WINAPI* PFNGETMENUINFO)(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	typedef BOOL(WINAPI* PFNSETMENUINFO)(HMENU hMenu, LPMENUINFO lpMenuInfo);
 	typedef BOOL(WINAPI* PFNGETGESTUREINFO)(HGESTUREINFO hGestureInfo, PGESTUREINFO pGestureInfo);
@@ -145,6 +151,7 @@ namespace ri
 	PFNSHGETFILEINFO pSHGetFileInfo; // Points to the W version on UNICODE and the A version otherwise.
 	PFNSHELL_NOTIFYICON pShell_NotifyIcon;
 	PFNPATHFILEEXISTS pPathFileExists;
+	PFNSETPROCESSDPIAWARE pSetProcessDPIAware;
 	PFNGETMENUINFO pGetMenuInfo;
 	PFNSETMENUINFO pSetMenuInfo;
 	PFNGETGESTUREINFO pGetGestureInfo;
@@ -158,6 +165,9 @@ namespace ri
 	PFNTRYENTERCRITICALSECTION pTryEnterCriticalSection;
 	PFNQUEUEUSERAPC pQueueUserAPC;
 	PFNGETVERSIONEX pGetVersionEx;
+	PFNCREATETOOLHELP32SNAPSHOT pCreateToolhelp32Snapshot;
+	PFNMODULE32FIRST pModule32First;
+	PFNMODULE32NEXT pModule32Next;
 	PFNCERTOPENSYSTEMSTOREA pCertOpenSystemStoreA;
 	PFNCERTCLOSESTORE pCertCloseStore;
 	PFNCERTFINDCERTIFICATEINSTORE pCertFindCertificateInStore;
@@ -230,10 +240,14 @@ void ri::InitReimplementation()
 		pTryEnterCriticalSection = (PFNTRYENTERCRITICALSECTION)GetProcAddress(hLibKernel32, "TryEnterCriticalSection");
 		pGetVersionEx = (PFNGETVERSIONEX)GetProcAddress(hLibKernel32, "GetVersionEx" UNIVER);
 		pQueueUserAPC = (PFNQUEUEUSERAPC)GetProcAddress(hLibKernel32, "QueueUserAPC");
+		pCreateToolhelp32Snapshot = (PFNCREATETOOLHELP32SNAPSHOT)GetProcAddress(hLibKernel32, "CreateToolhelp32Snapshot");
+		pModule32First = (PFNMODULE32FIRST)GetProcAddress(hLibKernel32, "Module32First" UNIVER2);
+		pModule32Next = (PFNMODULE32FIRST)GetProcAddress(hLibKernel32, "Module32Next" UNIVER2);
 	}
 
 	if (hLibUser32)
 	{
+		pSetProcessDPIAware = (PFNSETPROCESSDPIAWARE)GetProcAddress(hLibUser32, "SetProcessDPIAware");
 		pGetMenuInfo = (PFNGETMENUINFO)GetProcAddress(hLibUser32, "GetMenuInfo");
 		pSetMenuInfo = (PFNSETMENUINFO)GetProcAddress(hLibUser32, "SetMenuInfo");
 		pGetGestureInfo = (PFNGETGESTUREINFO)GetProcAddress(hLibUser32, "GetGestureInfo");
@@ -690,6 +704,14 @@ BOOL ri::GetMonitorInfo(HMONITOR hmon, LPMONITORINFO lpmi)
 	return TRUE;
 }
 
+BOOL ri::SetProcessDPIAware()
+{
+	if (pSetProcessDPIAware)
+		return pSetProcessDPIAware();
+
+	return FALSE;
+}
+
 BOOL ri::AnimateWindow(HWND hWnd, DWORD time, DWORD flags)
 {
 	if (pAnimateWindow)
@@ -777,6 +799,30 @@ BOOL ri::TryEnterCriticalSection(LPCRITICAL_SECTION lpCriticalSection)
 
 	// NOTE: Currently, neither iprog::recursive_mutex::try_lock nor iprog::mutex::try_lock
 	// seem to be used. So, on Windows 95, we're safe, for now ...
+	return FALSE;
+}
+
+HANDLE ri::CreateToolhelp32Snapshot(DWORD flags, DWORD pid)
+{
+	if (pCreateToolhelp32Snapshot)
+		return pCreateToolhelp32Snapshot(flags, pid);
+
+	return NULL;
+}
+
+BOOL ri::Module32First(HANDLE snapshot, LPMODULEENTRY32 lpme)
+{
+	if (pModule32First)
+		return pModule32First(snapshot, lpme);
+
+	return FALSE;
+}
+
+BOOL ri::Module32Next(HANDLE snapshot, LPMODULEENTRY32 lpme)
+{
+	if (pModule32Next)
+		return pModule32Next(snapshot, lpme);
+
 	return FALSE;
 }
 
