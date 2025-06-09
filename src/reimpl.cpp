@@ -45,6 +45,38 @@ extern int GetCutDownFlags();
 
 #endif
 
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#define PACKED
+#else
+#define PACKED __attribute__((packed))
+#endif
+
+// Thanks Raymond Chen
+typedef struct GRPICONDIRENTRY
+{
+    BYTE  bWidth;
+    BYTE  bHeight;
+    BYTE  bColorCount;
+    BYTE  bReserved;
+    WORD  wPlanes;
+    WORD  wBitCount;
+    DWORD dwBytesInRes;
+    WORD  nId;
+} PACKED GRPICONDIRENTRY;
+
+typedef struct GRPICONDIR
+{
+    WORD idReserved;
+    WORD idType;
+    WORD idCount;
+    GRPICONDIRENTRY idEntries[];
+} PACKED GRPICONDIR;
+
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
+
 namespace ri
 {
 	static bool s_bSupportsAtomics = false;
@@ -1001,8 +1033,46 @@ BOOL ri::DrawIconEx(HDC hdc, int x, int y, HICON hicon, int cx, int cy, UINT isi
 		return pDrawIconEx(hdc, x, y, hicon, cx, cy, isiac, hbrffd, dif);
 	}
 
-	// TODO: emulate it properly?
-	return DrawIcon(hdc, x, y, hicon);
+	// TODO: This doesn't do any stretching or anything of the sort.  Instead, 
+	ICONINFO ii;
+	if (!GetIconInfo(hicon, &ii))
+		return FALSE;
+
+	// Compute actual icon dimensions
+	int iw = ii.xHotspot * 2;
+	int ih = ii.yHotspot * 2;
+
+	// Create DCs
+	HDC hdcMask = CreateCompatibleDC(hdc);
+	HDC hdcColor = CreateCompatibleDC(hdc);
+
+	HGDIOBJ oldMask = SelectObject(hdcMask, ii.hbmMask);
+	HGDIOBJ oldColor = ii.hbmColor ? SelectObject(hdcColor, ii.hbmColor) : NULL;
+
+	// StretchBlt mask using SRCAND (makes background transparent)
+	StretchBlt(hdc, x, y, cx, cy, hdcMask, 0, 0, iw, ih, SRCAND);
+
+	// StretchBlt color layer using SRCINVERT (applies pixels)
+	if (ii.hbmColor) {
+		StretchBlt(hdc, x, y, cx, cy, hdcColor, 0, 0, iw, ih, SRCINVERT);
+	}
+	else {
+		// For monochrome icons, color is in bottom half of mask
+		StretchBlt(hdc, x, y, cx, cy, hdcMask, 0, ih, iw, ih, SRCINVERT);
+	}
+
+	// Cleanup
+	SelectObject(hdcMask, oldMask);
+	DeleteDC(hdcMask);
+
+	if (ii.hbmColor) {
+		SelectObject(hdcColor, oldColor);
+		DeleteDC(hdcColor);
+	}
+
+	DeleteObject(ii.hbmMask);
+	DeleteObject(ii.hbmColor);
+	return TRUE;
 }
 
 namespace ri
@@ -1173,15 +1243,6 @@ HBRUSH ri::GetSysColorBrush(int type)
 		hBrushCache[type] = (HBRUSH) GetStockObject(BLACK_BRUSH);
 
 	return hBrushCache[type];
-}
-
-HBITMAP ri::LoadImage(HINSTANCE hInst, LPCTSTR name, UINT type, int cx, int cy, UINT fuLoad)
-{
-	if (pLoadImage)
-		return pLoadImage(hInst, name, type, cx, cy, fuLoad);
-
-	// TODO
-	return NULL;
 }
 
 #ifndef EAFNOSUPPORT
@@ -1460,6 +1521,79 @@ namespace internal {
 		if (!_dcPen)
 			CreateDCPen();
 	}
+
+	HICON LoadIconBySize(HINSTANCE hInstance, LPCTSTR name, int cx, int cy)
+	{
+		HRSRC hrsrc = FindResource(hInstance, name, RT_GROUP_ICON);
+		if (!hrsrc) return NULL;
+
+		HGLOBAL hglob = LoadResource(hInstance, hrsrc);
+		if (!hglob) return NULL;
+
+		void* data = LockResource(hglob);
+		if (!data) {
+			FreeResource(hglob);
+			return NULL;
+		}
+
+		GRPICONDIR* gid = (GRPICONDIR*)data;
+		if (gid->idReserved != 0 || gid->idType != 1 || gid->idCount == 0)
+		{
+			UnlockResource(data);
+			FreeResource(hglob);
+			return NULL;
+		}
+
+		HDC hdc = GetDC(NULL);
+		int bpp = GetDeviceCaps(hdc, BITSPIXEL);
+		ReleaseDC(NULL, hdc);
+
+		GRPICONDIRENTRY* bestMatch = NULL;
+		for (int i = 0; i < gid->idCount; i++)
+		{
+			GRPICONDIRENTRY* entry = &gid->idEntries[i];
+
+			if (bestMatch == NULL) {
+				bestMatch = entry;
+				continue;
+			}
+
+			// check which one's closest on the XY size competition
+			if (abs(bestMatch->bWidth - cx) + abs(bestMatch->bHeight - cy) > abs(entry->bWidth - cx) + abs(bestMatch->bHeight - cy) ||
+				abs(bestMatch->wBitCount - bpp) > abs(entry->wBitCount - bpp)) {
+				bestMatch = entry;
+			}
+		}
+
+		// it's this one
+		int id = bestMatch->nId;
+
+		UnlockResource(data);
+		FreeResource(hglob);
+
+		// now load the actual data
+		hrsrc = FindResource(hInstance, MAKEINTRESOURCE(id), RT_ICON);
+		if (!hrsrc) return NULL;
+
+		DWORD size = SizeofResource(hInstance, hrsrc);
+		if (size == 0) return NULL;
+
+		hglob = LoadResource(hInstance, hrsrc);
+		if (!hglob) return NULL;
+
+		data = LockResource(hglob);
+		if (!data) {
+			FreeResource(hglob);
+			return NULL;
+		}
+
+		// TODO: This shit still scales the icon to 32x32. How do I make it stop doing that?!
+		HICON hic = CreateIconFromResource((PBYTE) data, size, TRUE, 0x30000);
+
+		UnlockResource(data);
+		FreeResource(hglob);
+		return hic;
+	}
 }
 }
 
@@ -1569,6 +1703,62 @@ HPEN ri::GetDCPen()
 
 	ri::internal::CreateDCPenIfNeeded();
 	return ri::internal::_dcPen;
+}
+
+HBITMAP ri::LoadImage(HINSTANCE hInst, LPCTSTR name, UINT type, int cx, int cy, UINT fuLoad)
+{
+	if (pLoadImage)
+		return pLoadImage(hInst, name, type, cx, cy, fuLoad);
+
+	struct Item {
+		HINSTANCE hi;
+		LPCTSTR nm;
+		int wid;
+		int hei;
+		bool operator<(const Item& oth) const {
+			// pointer comparisons because IDC
+			if (hi != oth.hi)
+				return hi < oth.hi;
+			if (nm != oth.nm)
+				return nm < oth.nm;
+			if (wid != oth.wid)
+				return wid < oth.wid;
+			return hei < oth.hei;
+		}
+	};
+
+	struct Map {
+		std::map<Item, HICON> loadedIcons;
+
+		~Map() {
+			for (auto& it : loadedIcons)
+				DestroyIcon(it.second);
+			loadedIcons.clear();
+		}
+	};
+
+	static Map m;
+
+	// try loading it as an icon instead
+	if (fuLoad & LR_SHARED)
+	{
+		// but first, check if we already have such an icon
+		auto it = m.loadedIcons.find({ hInst, name, cx, cy });
+		if (it != m.loadedIcons.end())
+			return (HBITMAP) it->second;
+	}
+
+	HICON hic = ri::internal::LoadIconBySize(hInst, name, cx, cy);
+	if (hic)
+	{
+		if (fuLoad & LR_SHARED)
+			m.loadedIcons[{ hInst, name, cx, cy }] = hic;
+		
+		return (HBITMAP) hic;
+	}
+
+	// TODO
+	return NULL;
 }
 
 int ri::GetHalfToneStretchMode()

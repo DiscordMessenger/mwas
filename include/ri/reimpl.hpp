@@ -186,12 +186,6 @@ namespace ri
 	// of relying on GetStockBrush:
 	HBRUSH GetDCBrush();
 	HPEN GetDCPen();
-
-	// Some flags that would/might actually cause things to
-	// break if they were set on earlier versions of Windows
-	int GetHalfToneStretchMode();
-	int GetWordEllipsisFlag();
-	bool SupportsScrollInfo();
 	
 	// Ole32
 	HRESULT CoInitialize(LPVOID lpv);
@@ -203,5 +197,14 @@ namespace ri
 	int ImageList_GetImageCount(HIMAGELIST himl);
 	int ImageList_ReplaceIcon(HIMAGELIST himl, int i, HICON hicon);
 	HWND CreateStatusWindowANSI(LONG style, LPCSTR text, HWND hwnd, UINT cid);
+
+	// Some flags that would/might actually cause things to
+	// break if they were set on earlier versions of Windows
+	int GetHalfToneStretchMode();
+	int GetWordEllipsisFlag();
+	bool SupportsScrollInfo();
+
+	// Internal Utilities
+	HICON LoadIconBySize(HINSTANCE hInstance, LPCTSTR name, int cx, int cy);
 }
 // namespace ri
