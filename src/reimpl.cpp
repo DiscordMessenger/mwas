@@ -108,6 +108,7 @@ namespace ri
 	typedef BOOL(WINAPI* PFNMODULE32FIRST)(HANDLE, LPMODULEENTRY32);
 	typedef BOOL(WINAPI* PFNMODULE32NEXT)(HANDLE, LPMODULEENTRY32);
 	typedef LPTOP_LEVEL_EXCEPTION_FILTER(WINAPI* PFNSETUNHANDLEDEXCEPTIONFILTER)(LPTOP_LEVEL_EXCEPTION_FILTER);
+	typedef PVOID(WINAPI* PFNADDVECTOREDEXCEPTIONHANDLER)(ULONG, PVECTORED_EXCEPTION_HANDLER);
 
 	// MsImg32
 	typedef BOOL(WINAPI* PFNGRADIENTFILL)(HDC hdc, PTRIVERTEX trivertex, ULONG nvertex, PVOID pmesh, ULONG nmesh, ULONG ulmode);
@@ -201,6 +202,7 @@ namespace ri
 	PFNCREATETOOLHELP32SNAPSHOT pCreateToolhelp32Snapshot;
 	PFNMODULE32FIRST pModule32First;
 	PFNSETUNHANDLEDEXCEPTIONFILTER pSetUnhandledExceptionFilter;
+	PFNADDVECTOREDEXCEPTIONHANDLER pAddVectoredExceptionHandler;
 	PFNMODULE32NEXT pModule32Next;
 	PFNCERTOPENSYSTEMSTOREA pCertOpenSystemStoreA;
 	PFNCERTCLOSESTORE pCertCloseStore;
@@ -278,6 +280,7 @@ void ri::InitReimplementation()
 		pModule32First = (PFNMODULE32FIRST)GetProcAddress(hLibKernel32, "Module32First" UNIVER2);
 		pModule32Next = (PFNMODULE32FIRST)GetProcAddress(hLibKernel32, "Module32Next" UNIVER2);
 		pSetUnhandledExceptionFilter = (PFNSETUNHANDLEDEXCEPTIONFILTER)GetProcAddress(hLibKernel32, "SetUnhandledExceptionFilter");
+		pAddVectoredExceptionHandler = (PFNADDVECTOREDEXCEPTIONHANDLER)GetProcAddress(hLibKernel32, "AddVectoredExceptionHandler");
 	}
 
 	if (hLibUser32)
@@ -865,6 +868,14 @@ LPTOP_LEVEL_EXCEPTION_FILTER ri::SetUnhandledExceptionFilter(LPTOP_LEVEL_EXCEPTI
 {
 	if (pSetUnhandledExceptionFilter)
 		return pSetUnhandledExceptionFilter(filter);
+
+	return NULL;
+}
+
+PVOID ri::AddVectoredExceptionHandler(ULONG First, PVECTORED_EXCEPTION_HANDLER Handler)
+{
+	if (pAddVectoredExceptionHandler)
+		return pAddVectoredExceptionHandler(First, Handler);
 
 	return NULL;
 }

@@ -144,6 +144,7 @@ namespace ri
 	BOOL Module32First(HANDLE snapshot, LPMODULEENTRY32 lpme);
 	BOOL Module32Next(HANDLE snapshot, LPMODULEENTRY32 lpme);
 	LPTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(LPTOP_LEVEL_EXCEPTION_FILTER filter);
+	PVOID AddVectoredExceptionHandler(ULONG First, PVECTORED_EXCEPTION_HANDLER Handler);
 
 	// Msimg32
 	bool HaveMsImg();
