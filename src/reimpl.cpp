@@ -1049,9 +1049,11 @@ BOOL ri::DrawIconEx(HDC hdc, int x, int y, HICON hicon, int cx, int cy, UINT isi
 	if (!GetIconInfo(hicon, &ii))
 		return FALSE;
 
-	// Compute actual icon dimensions
-	int iw = ii.xHotspot * 2;
-	int ih = ii.yHotspot * 2;
+	BITMAP bmp;
+	GetObject(ii.hbmColor, sizeof(BITMAP), &bmp);
+
+	int iw = bmp.bmWidth;
+	int ih = bmp.bmHeight;
 
 	// Create DCs
 	HDC hdcMask = CreateCompatibleDC(hdc);
@@ -1570,7 +1572,7 @@ namespace internal {
 			}
 
 			// check which one's closest on the XY size competition
-			if (abs(bestMatch->bWidth - cx) + abs(bestMatch->bHeight - cy) > abs(entry->bWidth - cx) + abs(bestMatch->bHeight - cy) ||
+			if (abs(bestMatch->bWidth - cx) + abs(bestMatch->bHeight - cy) > abs(entry->bWidth - cx) + abs(entry->bHeight - cy) ||
 				abs(bestMatch->wBitCount - bpp) > abs(entry->wBitCount - bpp)) {
 				bestMatch = entry;
 			}
@@ -1597,10 +1599,78 @@ namespace internal {
 			FreeResource(hglob);
 			return NULL;
 		}
+		
+		// this is horrible but it's my last shot
+		PBYTE byteData = (PBYTE)data;
+		PBITMAPINFOHEADER infoHeaderR = (PBITMAPINFOHEADER) byteData;
+		
+		size_t hdrsz = infoHeaderR->biSize;
+		if (infoHeaderR->biBitCount <= 8)
+			hdrsz += (infoHeaderR->biClrUsed ? infoHeaderR->biClrUsed : (1 << infoHeaderR->biBitCount)) * sizeof(RGBQUAD);
 
-		// TODO: This shit still scales the icon to 32x32. How do I make it stop doing that?!
-		HICON hic = CreateIconFromResource((PBYTE) data, size, TRUE, 0x30000);
+		size_t cpysz = hdrsz;
+		if (cpysz < sizeof(BITMAPINFOHEADER) + sizeof(RGBQUAD) * 2)
+			cpysz = sizeof(BITMAPINFOHEADER) + sizeof(RGBQUAD) * 2;
 
+		PBITMAPINFOHEADER infoHeader = (PBITMAPINFOHEADER) malloc(cpysz);
+		memcpy(infoHeader, infoHeaderR, hdrsz);
+		
+		// since height is doubled
+		infoHeader->biHeight /= 2;
+
+		int hsize = infoHeader->biSize;
+		int width = infoHeader->biWidth, height = infoHeader->biHeight;
+		int icbpp = infoHeader->biBitCount;
+		int pitch = ((width * icbpp + 31) / 32) * 4;
+		int isize = pitch * height;
+
+		// also make sure to skip the color table
+
+		hdc = GetDC(NULL);
+
+		HBITMAP hbmColor = CreateDIBitmap(hdc, infoHeader, CBM_INIT, byteData + hdrsz, (BITMAPINFO*) infoHeader, DIB_RGB_COLORS);
+		if (!hbmColor) {
+		fail:
+			free(infoHeader);
+			ReleaseDC(NULL, hdc);
+			UnlockResource(data);
+			FreeResource(hglob);
+			return NULL;
+		}
+
+		PBITMAPINFO bmMask = (PBITMAPINFO) infoHeader;
+
+		infoHeader->biPlanes = 1;
+		infoHeader->biBitCount = 1;
+		infoHeader->biCompression = BI_RGB;
+		infoHeader->biHeight = height;
+		infoHeader->biBitCount = 1; // always monochrome mask
+		infoHeader->biSizeImage = 0;
+		infoHeader->biClrUsed = 2;
+		infoHeader->biClrImportant = 2;
+		infoHeader->biSizeImage = ((width + 31) / 32) * 4 * height;
+		bmMask->bmiColors[0].rgbRed = bmMask->bmiColors[0].rgbGreen = bmMask->bmiColors[0].rgbBlue = 0;
+		bmMask->bmiColors[1].rgbRed = bmMask->bmiColors[1].rgbGreen = bmMask->bmiColors[1].rgbBlue = 255;
+
+		HBITMAP hbmMask = CreateDIBitmap(hdc, &bmMask->bmiHeader, CBM_INIT, byteData + hdrsz + isize, bmMask, DIB_RGB_COLORS);
+		if (!hbmMask) {
+			DeleteObject(hbmColor);
+			goto fail;
+		}
+
+		ICONINFO ii = {};
+		ii.fIcon = TRUE;
+		ii.hbmColor = hbmColor;
+		ii.hbmMask = hbmMask;
+		ii.xHotspot = width;
+		ii.yHotspot = height;
+		
+		HICON hic = CreateIconIndirect(&ii);
+
+		free(infoHeader);
+		DeleteObject(hbmColor);
+		DeleteObject(hbmMask);
+		ReleaseDC(NULL, hdc);
 		UnlockResource(data);
 		FreeResource(hglob);
 		return hic;
