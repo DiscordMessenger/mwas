@@ -1742,18 +1742,19 @@ HBITMAP ri::CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, VOID**
 	DWORD dwSize = pbmi->bmiHeader.biSizeImage;
 	if (dwSize == 0)
 	{
-		dwSize = pbmi->bmiHeader.biWidth * abs(pbmi->bmiHeader.biHeight) * (pbmi->bmiHeader.biBitCount / 8);
+		dwSize = (pbmi->bmiHeader.biWidth * pbmi->bmiHeader.biBitCount + 31) / 32 * 4 * abs(pbmi->bmiHeader.biHeight);
 		if (dwSize == 0)
 			return NULL;
 	}
 
-	*ppvBits = GlobalAlloc(GMEM_FIXED, dwSize);
+	*ppvBits = calloc(dwSize, 1);
+
 	if (!*ppvBits)
 		return NULL;
 
-	HBITMAP hbm = CreateDIBitmap(hdc, &pbmi->bmiHeader, CBM_INIT, ppvBits, pbmi, usage);
+	HBITMAP hbm = CreateDIBitmap(hdc, &pbmi->bmiHeader, CBM_INIT, *ppvBits, pbmi, usage);
 	if (!hbm) {
-		GlobalFree(*ppvBits);
+		free(*ppvBits);
 		return NULL;
 	}
 
@@ -1766,6 +1767,14 @@ void ri::CommitDIBSection(HDC hdc, HBITMAP hbm, const BITMAPINFO* pbmi, VOID* pv
 		return;
 
 	SetDIBits(hdc, hbm, 0, abs(pbmi->bmiHeader.biHeight), pvBits, pbmi, DIB_RGB_COLORS);
+}
+
+void ri::ReleaseDIBSection(VOID* pvBits)
+{
+	if (pCreateDIBSection)
+		return;
+
+	free(pvBits);
 }
 
 HBRUSH ri::GetDCBrush()
