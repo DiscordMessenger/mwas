@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <tlhelp32.h>
+#include <stdint.h>
 
 // This part of the DiscordMessenger project is designed to reimplement APIs missing
 // in earlier versions of Windows, such as Windows NT 4.  It's basically like a polyfill.
