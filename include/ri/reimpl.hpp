@@ -212,9 +212,9 @@ namespace ri
 }
 // namespace ri
 
-#if defined __MSVCRT_VERSION__ && __MSVCRT_VERSION__ < 0x100
-
 #include <process.h>
+
+#if defined __MSVCRT_VERSION__ && __MSVCRT_VERSION__ < 0x100
 
 // CRTDLL compatibility
 #pragma GCC diagnostic push
