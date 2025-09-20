@@ -1983,3 +1983,120 @@ HWND ri::CreateStatusWindowANSI(LONG style, LPCSTR text, HWND hwnd, UINT cid)
 
 	return NULL;
 }
+
+#if defined(__MSVCRT_VERSION__) && __MSVCRT_VERSION__ < 0x100
+
+#include <process.h>
+
+// For CRTDLL compatibility.
+//
+// This wraps around _beginthread and _endthread.  We use a wrapper function that waits for an
+// event to fire (to allow the handle to be duplicated for our own purposes).
+
+static HANDLE event_wait;
+
+struct ThreadInit {
+	_beginthreadex_proc_type start_address;
+	void* arglist;
+	unsigned* thread_id;
+	bool exit_early;
+};
+
+extern "C" __cdecl
+void thread_entry(void* ptr)
+{
+	ThreadInit* init = (ThreadInit*) ptr;
+	
+	// write thread ID
+	if (init->thread_id)
+		*init->thread_id = (unsigned) GetCurrentThreadId();
+	
+	// wait until the handle was duplicated
+	WaitForSingleObject(event_wait, INFINITE);
+	
+	// exit early in case duplicating the handle failed
+	if (init->exit_early) {
+		free(init);
+		return;
+	}
+	
+	init->start_address(init->arglist);
+	free(init);
+}
+
+extern "C" __cdecl
+uintptr_t _beginthreadex(
+	void *security,
+	unsigned stack_size,
+	_beginthreadex_proc_type start_address,
+	void *arglist,
+	unsigned initflag,
+	unsigned *thrdaddr
+)
+{
+	(void) security;
+	
+	if (!start_address) {
+		errno = 22;
+		return 0;
+	}
+	
+	if (!event_wait) {
+		// creates an auto-reset event
+		event_wait = CreateEventA(NULL, FALSE, FALSE, NULL);
+		
+		if (!event_wait) {
+			errno = ENOMEM;
+			return 0;
+		}
+	}
+	
+	ThreadInit* init = (ThreadInit*) malloc(sizeof(ThreadInit));
+	if (!init) {
+		errno = ENOMEM;
+		return 0;
+	}
+	
+	init->start_address = start_address;
+	init->arglist = arglist;
+	init->thread_id = thrdaddr;
+	init->exit_early = false;
+	
+	// create the thread
+	uintptr_t beginThreadHandle = _beginthread(thread_entry, stack_size, init);
+	if (beginThreadHandle == (uintptr_t) -1)
+		return 0;
+	
+	HANDLE newHandle = NULL;
+	
+	// it'll now be waiting for our event, so duplicate the handle
+	// while we still can (NOTE: the original handle will remain
+	// valid until the thread exits)
+	BOOL duplicated = DuplicateHandle(
+		GetCurrentProcess(),
+		(HANDLE)beginThreadHandle,
+		GetCurrentProcess(),
+		&newHandle,
+		0,
+		TRUE,
+		DUPLICATE_SAME_ACCESS
+	);
+	
+	if (!duplicated)
+	{
+		// no duplication, let the thread know it must exit immediately
+		init->exit_early = true;
+		SetEvent(event_wait);
+		
+		errno = EINVAL;
+		return 0;
+	}
+	
+	// handle duplicated successfully, so now signal the event and return
+	// the duplicated handle
+	SetEvent(event_wait);
+	
+	return (uintptr_t) newHandle;
+}
+
+#endif

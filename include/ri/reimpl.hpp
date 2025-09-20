@@ -211,3 +211,25 @@ namespace ri
 	HICON LoadIconBySize(HINSTANCE hInstance, LPCTSTR name, int cx, int cy);
 }
 // namespace ri
+
+#if defined __MSVCRT_VERSION__ && __MSVCRT_VERSION__ < 0x100
+
+#include <process.h>
+
+// CRTDLL compatibility
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattributes"
+
+extern "C" __cdecl
+uintptr_t _beginthreadex(
+	void *security,
+	unsigned stack_size,
+	_beginthreadex_proc_type start_address,
+	void *arglist,
+	unsigned initflag,
+	unsigned *thrdaddr
+);
+
+#pragma GCC diagnostic pop
+
+#endif
