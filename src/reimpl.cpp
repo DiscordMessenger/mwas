@@ -144,6 +144,7 @@ namespace ri
 	typedef BOOL(WINAPI* PFNSETSCROLLINFO)(HWND, int, LPSCROLLINFO, BOOL);
 	typedef HBRUSH(WINAPI* PFNGETSYSCOLORBRUSH)(int);
 	typedef HBITMAP(WINAPI* PFNLOADIMAGE)(HINSTANCE, LPCTSTR, UINT, int, int, UINT);
+	typedef HANDLE(WINAPI* PFNCOPYIMAGE)(HANDLE, UINT, int, int, UINT);
 
 	// Crypt32
 	typedef HCERTSTORE    (WINAPI* PFNCERTOPENSYSTEMSTOREA)       (HCRYPTPROV_LEGACY, LPCSTR);
@@ -230,6 +231,7 @@ namespace ri
 	PFNSETSCROLLINFO pSetScrollInfo;
 	PFNGETSYSCOLORBRUSH pGetSysColorBrush;
 	PFNLOADIMAGE pLoadImage;
+	PFNCOPYIMAGE pCopyImage;
 }
 // namespace ri
 
@@ -299,6 +301,7 @@ void ri::InitReimplementation()
 		pSetScrollInfo = (PFNSETSCROLLINFO)GetProcAddress(hLibUser32, "SetScrollInfo");
 		pGetSysColorBrush = (PFNGETSYSCOLORBRUSH)GetProcAddress(hLibUser32, "GetSysColorBrush");
 		pLoadImage = (PFNLOADIMAGE)GetProcAddress(hLibUser32, "LoadImage" UNIVER);
+		pCopyImage = (PFNCOPYIMAGE)GetProcAddress(hLibUser32, "CopyImage");
 
 #ifdef DISCORD_MESSENGER
 		if (cdf & DMCDF_NODRIEX)
@@ -1793,6 +1796,48 @@ HPEN ri::GetDCPen()
 
 	ri::internal::CreateDCPenIfNeeded();
 	return ri::internal::_dcPen;
+}
+
+HANDLE ri::CopyImage(HANDLE handle, UINT type, INT cx, INT cy, UINT flags)
+{
+	if (pCopyImage)
+		return pCopyImage(handle, type, cx, cy, flags);
+
+	if (type != IMAGE_BITMAP) {
+		// Not Supported
+		return 0;
+	}
+
+	HBITMAP oldBmp = (HBITMAP) handle;
+	BITMAP bmp;
+	if (!GetObject(handle, sizeof(bmp), &bmp))
+		return NULL;
+
+	if (cx == 0)
+		cx = bmp.bmWidth;
+	if (cy == 0)
+		cy = bmp.bmHeight;
+
+	HDC hdc = GetDC(NULL);
+	HBITMAP hbmNew = CreateCompatibleBitmap(hdc, bmp.bmWidth, bmp.bmHeight);
+	if (!hbmNew) {
+		ReleaseDC(NULL, hdc);
+		return NULL;
+	}
+
+	HDC hdcSrc = CreateCompatibleDC(hdc);
+	HDC hdcDst = CreateCompatibleDC(hdc);
+	void* oldSrcObj = SelectObject(hdcSrc, (HBITMAP)handle);
+	void* oldDstObj = SelectObject(hdcDst, hbmNew);
+
+	BitBlt(hdcDst, 0, 0, cx, cy, hdcSrc, 0, 0, SRCCOPY);
+
+	SelectObject(hdcSrc, oldSrcObj);
+	SelectObject(hdcDst, oldDstObj);
+	DeleteDC(hdcSrc);
+	DeleteDC(hdcDst);
+	ReleaseDC(NULL, hdc);
+	return hbmNew;
 }
 
 HBITMAP ri::LoadImage(HINSTANCE hInst, LPCTSTR name, UINT type, int cx, int cy, UINT fuLoad)

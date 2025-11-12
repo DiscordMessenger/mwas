@@ -177,6 +177,7 @@ namespace ri
 	BOOL SetScrollInfo(HWND, int, LPSCROLLINFO, BOOL);
 	HBRUSH GetSysColorBrush(int);
 	HBITMAP LoadImage(HINSTANCE, LPCTSTR, UINT, int, int, UINT);
+	HANDLE CopyImage(HANDLE handle, UINT type, INT cx, INT cy, UINT flags);
 
 	// Gdi32
 	COLORREF SetDCBrushColor(HDC hdc, COLORREF color);
